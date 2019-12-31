@@ -2,7 +2,7 @@
 
 from typing import Dict, List
 
-import _ankirs  # pytype: disable=import-error
+import ankirspy  # pytype: disable=import-error
 
 import anki.backend_pb2 as pb
 
@@ -43,7 +43,7 @@ def proto_template_reqs_to_legacy(
 
 class Backend:
     def __init__(self, path: str):
-        self._backend = _ankirs.Backend(path)
+        self._backend = ankirspy.Backend(path)
 
     def _run_command(self, input: pb.BackendInput) -> pb.BackendOutput:
         input_bytes = input.SerializeToString()
