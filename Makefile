@@ -9,7 +9,7 @@ RUNARGS :=
 BLACKARGS := -t py36 anki tests
 ISORTARGS := anki tests
 
-$(shell mkdir -p .build)
+$(shell mkdir -p .build ../build)
 
 PHONY: all
 all: check
@@ -60,7 +60,7 @@ CHECKDEPS := .build/dev-deps .build/py-proto $(shell find anki tests -name '*.py
 # Building
 ######################
 
-.PHONY: build install
+.PHONY: build
 
 # we only want the wheel when building, but passing -f wheel to poetry
 # breaks the inclusion of files listed in pyproject.toml
@@ -68,12 +68,10 @@ build: $(CHECKDEPS)
 	rm -rf dist
 	echo "build='$$(git rev-parse --short HEAD)'" > anki/buildhash.py
 	poetry build
+	rsync -a dist/*.whl ../build/
 
 PROTODEPS := $(wildcard ../anki-proto/*.proto)
 
 .build/py-proto: .build/dev-deps $(PROTODEPS)
 	poetry run protoc --proto_path=../anki-proto --python_out=anki --mypy_out=anki $(PROTODEPS)
 	@touch $@
-
-install: build
-	pip install --force-reinstall dist/*.whl

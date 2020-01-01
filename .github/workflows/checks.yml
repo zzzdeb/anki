@@ -15,9 +15,17 @@ jobs:
         uses: Arduino/actions/setup-protoc@master
       - name: Run checks
         run: |
+          # add requirements
           pip install --upgrade pip poetry
+          python${{ matrix.python-version }} -m venv ~/pyenv
+          . ~/pyenv/bin/activate
           (cd .. && git clone --depth 1 https://github.com/ankitects/anki-proto.git)
           (cd .. && git clone --depth 1 https://github.com/ankitects/anki-lib-rust.git)
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-py-bindings.git && cd anki-py-bindings && make install BUILDFLAGS="")
-          make check install
+          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-py-bindings.git && cd anki-py-bindings && make build BUILDFLAGS="")
+          pip install ../build/ankirspy*
+          # check module
+          make check build
+          # make sure global install works
+          deactivate
+          pip install ../build/*.whl
           cd .. && python -c 'import anki'
