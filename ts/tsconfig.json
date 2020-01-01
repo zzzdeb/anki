@@ -7,7 +7,7 @@
       "dom"
     ],
     "rootDir": "src",
-    "outDir": "../web",
+    "outDir": "../aqt_data/web",
     "strict": true,
     /* Enable all strict type-checking options. */
     "noImplicitAny": false,
