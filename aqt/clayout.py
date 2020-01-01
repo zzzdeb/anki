@@ -10,9 +10,9 @@ import aqt
 from anki.consts import *
 from anki.hooks import runFilter
 from anki.lang import _, ngettext
-from anki.sound import clearAudioQueue, playFromText
 from anki.utils import bodyClass, isMac, isWin, joinFields
 from aqt.qt import *
+from aqt.sound import clearAudioQueue, playFromText
 from aqt.utils import (
     askUser,
     downArrow,

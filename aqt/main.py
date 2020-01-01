@@ -15,11 +15,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from send2trash import send2trash
 
-import anki.mpv
-import anki.sound
 import aqt
 import aqt.mediasrv
+import aqt.mpv
 import aqt.progress
+import aqt.sound
 import aqt.stats
 import aqt.toolbar
 import aqt.webview
@@ -378,7 +378,7 @@ close the profile or restart Anki."""
     def cleanupAndExit(self) -> None:
         self.errorHandler.unload()
         self.mediaServer.shutdown()
-        anki.sound.cleanupMPV()
+        aqt.sound.cleanupMPV()
         self.app.exit(0)
 
     # Sound/video
@@ -388,10 +388,10 @@ close the profile or restart Anki."""
         if isWin:
             return
         try:
-            anki.sound.setupMPV()
+            aqt.sound.setupMPV()
         except FileNotFoundError:
             print("mpv not found, reverting to mplayer")
-        except anki.mpv.MPVProcessError:
+        except aqt.mpv.MPVProcessError:
             print("mpv too old, reverting to mplayer")
 
     # Collection load/unload

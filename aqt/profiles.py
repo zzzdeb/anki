@@ -16,8 +16,8 @@ from typing import Any, Dict
 from send2trash import send2trash
 
 import anki.lang
-import anki.sound
 import aqt.forms
+import aqt.sound
 from anki.db import DB
 from anki.lang import _
 from anki.utils import intTime, isMac, isWin
@@ -74,7 +74,7 @@ class ProfileManager:
         # instantiate base folder
         self._setBaseFolder(base)
 
-        anki.sound.setMpvConfigBase(self.base)
+        aqt.sound.setMpvConfigBase(self.base)
 
     def setupMeta(self) -> LoadMetaResult:
         # load metadata

@@ -17,7 +17,6 @@ from anki.collection import _Collection
 from anki.consts import *
 from anki.hooks import addHook, remHook, runFilter, runHook
 from anki.lang import _, ngettext
-from anki.sound import allSounds, clearAudioQueue, play
 from anki.utils import (
     bodyClass,
     fmtTimeSpan,
@@ -29,6 +28,7 @@ from anki.utils import (
 )
 from aqt import AnkiQt
 from aqt.qt import *
+from aqt.sound import allSounds, clearAudioQueue, play
 from aqt.utils import (
     MenuList,
     SubMenu,

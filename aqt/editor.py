@@ -17,8 +17,8 @@ from typing import Callable, List, Optional, Tuple
 import requests
 from bs4 import BeautifulSoup
 
-import anki.sound
 import aqt
+import aqt.sound
 from anki.hooks import addHook, runFilter, runHook
 from anki.lang import _
 from anki.sync import AnkiRequestsClient
@@ -700,8 +700,8 @@ to a cloze type first, via Edit>Change Note Type."""
             name = urllib.parse.quote(fname.encode("utf8"))
             return '<img src="%s">' % name
         else:
-            anki.sound.clearAudioQueue()
-            anki.sound.play(fname)
+            aqt.sound.clearAudioQueue()
+            aqt.sound.play(fname)
             return "[sound:%s]" % fname
 
     def urlToFile(self, url):

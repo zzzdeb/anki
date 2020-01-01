@@ -14,11 +14,10 @@ import aqt
 from anki.cards import Card
 from anki.hooks import addHook, runFilter, runHook
 from anki.lang import _, ngettext
-from anki.sound import clearAudioQueue, play, playFromText
 from anki.utils import bodyClass, stripHTML
 from aqt import AnkiQt
 from aqt.qt import *
-from aqt.sound import getAudio
+from aqt.sound import clearAudioQueue, getAudio, play, playFromText
 from aqt.utils import (
     askUserDialog,
     downArrow,

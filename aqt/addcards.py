@@ -10,10 +10,10 @@ import aqt.modelchooser
 from anki.hooks import addHook, remHook, runHook
 from anki.lang import _
 from anki.notes import Note
-from anki.sound import clearAudioQueue
 from anki.utils import htmlToTextLine, isMac
 from aqt import AnkiQt
 from aqt.qt import *
+from aqt.sound import clearAudioQueue
 from aqt.utils import (
     addCloseShortcut,
     askUser,

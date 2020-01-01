@@ -4,7 +4,7 @@
 
 import aqt
 from anki.lang import _
-from anki.sound import clearAudioQueue
+from aqt.sound import clearAudioQueue
 from aqt.utils import askUserDialog, openLink, shortcut, tooltip
 
 

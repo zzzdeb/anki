@@ -8,9 +8,9 @@ import aqt
 from anki.errors import DeckRenameError
 from anki.hooks import runHook
 from anki.lang import _, ngettext
-from anki.sound import clearAudioQueue
 from anki.utils import fmtTimeSpan, ids2str
 from aqt.qt import *
+from aqt.sound import clearAudioQueue
 from aqt.utils import askUser, getOnlyText, openHelp, openLink, shortcut, showWarning
 
 
