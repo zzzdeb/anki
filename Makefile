@@ -39,7 +39,7 @@ JSDEPS := $(patsubst ts/src/%.ts, web/%.js, $(TSDEPS))
 
 .PHONY: check fix build
 
-check: .build/mypy .build/test .build/fmt .build/imports .build/lint .build/ts-fmt
+check: build .build/mypy .build/test .build/fmt .build/imports .build/lint .build/ts-fmt
 
 fix:
 	poetry run isort $(ISORTARGS)
@@ -54,7 +54,7 @@ clean:
 
 LIBPY := ../anki-lib-python
 
-CHECKDEPS := build $(shell find aqt tests -name '*.py')
+CHECKDEPS := $(shell find aqt tests -name '*.py')
 
 .build/mypy: $(CHECKDEPS)
 	MYPYPATH=$(LIBPY) poetry run mypy aqt

@@ -14,6 +14,11 @@ from anki.utils import invalidFilename, isMac, isWin, noBundledLibs, versionWith
 from aqt.qt import *
 
 
+def aqt_data_folder() -> str:
+    src_folder = os.path.join(os.path.dirname(__file__), "..", "aqt_data")
+    return src_folder
+
+
 def openHelp(section):
     link = aqt.appHelpSite
     if section:

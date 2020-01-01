@@ -12,13 +12,12 @@ from typing import Optional
 from anki.collection import _Collection
 from anki.utils import devMode
 from aqt.qt import *
+from aqt.utils import aqt_data_folder
 
 
-# locate web folder in source/binary distribution
 def _getExportFolder():
-    # running from source?
-    srcFolder = os.path.join(os.path.dirname(__file__), "..")
-    webInSrcFolder = os.path.abspath(os.path.join(srcFolder, "web"))
+    data_folder = aqt_data_folder()
+    webInSrcFolder = os.path.abspath(os.path.join(data_folder, "web"))
     if os.path.exists(webInSrcFolder):
         return webInSrcFolder
     elif isMac:
