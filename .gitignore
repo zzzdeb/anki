@@ -9,8 +9,9 @@
 .mypy_cache
 .pytype
 __pycache__
-anki/buildhash.py
+anki.egg-info
 anki/backend_pb2.*
-locale
+anki/buildhash.py
+build
 dist
-poetry.lock
+

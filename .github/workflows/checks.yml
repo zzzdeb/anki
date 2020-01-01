@@ -16,16 +16,17 @@ jobs:
       - name: Run checks
         run: |
           # add requirements
-          pip install --upgrade pip poetry
-          python${{ matrix.python-version }} -m venv ~/pyenv
+          python3.6 -m venv ~/pyenv
           . ~/pyenv/bin/activate
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-proto.git)
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-lib-rust.git)
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-py-bindings.git && cd anki-py-bindings && make build BUILDFLAGS="")
-          pip install ../build/ankirspy*
+          pip install --upgrade pip setuptools
+          cd ..
+          for p in proto lib-rust lib-rspy; do git clone --depth 1 https://github.com/ankitects/anki-$p.git; done
+          (cd anki-lib-rspy && make develop build BUILDFLAGS="")
           # check module
+          cd anki-lib-python
           make check build
-          # make sure global install works
+          # make sure wheel works
           deactivate
-          pip install ../build/*.whl
-          cd .. && python -c 'import anki'
+          cd ..
+          pip install build/*.whl
+          python -c 'import anki'

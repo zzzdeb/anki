@@ -14,64 +14,74 @@ $(shell mkdir -p .build ../build)
 PHONY: all
 all: check
 
-.build/dev-deps: pyproject.toml
-	poetry install --no-root
+.build/run-deps: setup.py
+	pip install -e .
 	@touch $@
+
+.build/dev-deps: requirements.dev
+	pip install -r requirements.dev
+	@touch $@
+
+PROTODEPS := $(wildcard ../anki-proto/*.proto)
+
+.build/py-proto: .build/dev-deps $(PROTODEPS)
+	protoc --proto_path=../anki-proto --python_out=anki --mypy_out=anki $(PROTODEPS)
+	@touch $@
+
+BUILD_STEPS := .build/run-deps .build/dev-deps .build/py-proto
 
 # Checking
 ######################
 
-.PHONY: check fix build
+.PHONY: check
+check: $(BUILD_STEPS) .build/mypy .build/test .build/fmt .build/imports .build/lint
 
-check: .build/mypy .build/test .build/fmt .build/imports .build/lint
+.PHONY: fix
+fix: $(BUILD_STEPS)
+	isort $(ISORTARGS)
+	black $(BLACKARGS)
 
-fix:
-	poetry run isort $(ISORTARGS)
-	poetry run black $(BLACKARGS)
-
+.PHONY: clean
 clean:
-	rm -rf .build
+	rm -rf .build anki.egg-info build dist
 
 # Checking python
 ######################
 
-CHECKDEPS := .build/dev-deps .build/py-proto $(shell find anki tests -name '*.py' | grep -v buildhash.py)
+CHECKDEPS := $(shell find anki tests -name '*.py' | grep -v buildhash.py)
 
 .build/mypy: $(CHECKDEPS)
-	poetry run mypy anki
+	mypy anki
 	@touch $@
 
 .build/test: $(CHECKDEPS)
-	poetry run python -m nose2 --plugin=nose2.plugins.mp -N 16
+	python -m nose2 --plugin=nose2.plugins.mp -N 16
 	@touch $@
 
 .build/lint: $(CHECKDEPS)
-	poetry run pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=ankirspy anki
+	pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=ankirspy anki
 	@touch $@
 
 .build/imports: $(CHECKDEPS)
-	poetry run isort $(ISORTARGS) --check
+	isort $(ISORTARGS) --check
 	@touch $@
 
 .build/fmt: $(CHECKDEPS)
-	poetry run black --check $(BLACKARGS)
+	black --check $(BLACKARGS)
 	@touch $@
 
 # Building
 ######################
 
-.PHONY: build
-
 # we only want the wheel when building, but passing -f wheel to poetry
 # breaks the inclusion of files listed in pyproject.toml
-build: $(CHECKDEPS)
+.PHONY: build
+build: $(BUILD_STEPS) $(CHECKDEPS)
 	rm -rf dist
 	echo "build='$$(git rev-parse --short HEAD)'" > anki/buildhash.py
-	poetry build
+	python setup.py bdist_wheel
 	rsync -a dist/*.whl ../build/
 
-PROTODEPS := $(wildcard ../anki-proto/*.proto)
-
-.build/py-proto: .build/dev-deps $(PROTODEPS)
-	poetry run protoc --proto_path=../anki-proto --python_out=anki --mypy_out=anki $(PROTODEPS)
-	@touch $@
+# prepare code for running in place
+.PHONY: develop
+develop: $(BUILD_STEPS)
