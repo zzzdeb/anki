@@ -11,19 +11,11 @@ ISORTARGS := anki tests
 
 $(shell mkdir -p .build)
 
+PHONY: all
 all: check
 
-RUNREQS := .build/py-run-deps
-
-# Python prerequisites
-######################
-
-.build/py-run-deps: requirements.txt
-	pip install -r $<
-	@touch $@
-
-.build/py-check-reqs: requirements.check .build/py-run-deps
-	pip install -r $<
+.build/dev-deps: pyproject.toml
+	poetry install --no-root
 	@touch $@
 
 # Checking
@@ -43,25 +35,45 @@ clean:
 # Checking python
 ######################
 
-PYCHECKDEPS := $(BUILDDEPS) .build/py-check-reqs $(shell find anki -name '*.py' | grep -v buildhash.py)
-PYTESTDEPS := $(wildcard tests/*.py)
+CHECKDEPS := .build/dev-deps .build/py-proto $(shell find anki tests -name '*.py' | grep -v buildhash.py)
 
-.build/mypy: $(PYCHECKDEPS)
+.build/mypy: $(CHECKDEPS)
 	mypy anki
 	@touch $@
 
-.build/test: $(PYCHECKDEPS) $(PYTESTDEPS)
+.build/test: $(CHECKDEPS)
 	python -m nose2 --plugin=nose2.plugins.mp -N 16
 	@touch $@
 
-.build/lint: $(PYCHECKDEPS)
+.build/lint: $(CHECKDEPS)
 	pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=ankirspy anki
 	@touch $@
 
-.build/imports: $(PYCHECKDEPS) $(PYTESTDEPS)
+.build/imports: $(CHECKDEPS)
 	isort $(ISORTARGS) --check
 	@touch $@
 
-.build/fmt: $(PYCHECKDEPS) $(PYTESTDEPS)
+.build/fmt: $(CHECKDEPS)
 	black --check $(BLACKARGS)
 	@touch $@
+
+# Building
+######################
+
+.PHONY: build install
+
+# we only want the wheel when building, but passing -f wheel to poetry
+# breaks the inclusion of files listed in pyproject.toml
+build: $(CHECKDEPS)
+	rm -rf dist
+	echo "build='$$(git rev-parse --short HEAD)'" > anki/buildhash.py
+	poetry build
+
+PROTODEPS := $(wildcard ../anki-proto/*.proto)
+
+.build/py-proto: .build/dev-deps $(PROTODEPS)
+	protoc --proto_path=../anki-proto --python_out=anki --mypy_out=anki $(PROTODEPS)
+	@touch $@
+
+install: build
+	pip install --force-reinstall dist/*.whl

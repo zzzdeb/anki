@@ -12,3 +12,5 @@ __pycache__
 anki/buildhash.py
 anki/backend_pb2.*
 locale
+dist
+poetry.lock
