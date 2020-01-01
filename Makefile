@@ -26,8 +26,8 @@ all: check
 check: .build/mypy .build/test .build/fmt .build/imports .build/lint
 
 fix:
-	isort $(ISORTARGS)
-	black $(BLACKARGS)
+	poetry run isort $(ISORTARGS)
+	poetry run black $(BLACKARGS)
 
 clean:
 	rm -rf .build
@@ -38,23 +38,23 @@ clean:
 CHECKDEPS := .build/dev-deps .build/py-proto $(shell find anki tests -name '*.py' | grep -v buildhash.py)
 
 .build/mypy: $(CHECKDEPS)
-	mypy anki
+	poetry run mypy anki
 	@touch $@
 
 .build/test: $(CHECKDEPS)
-	python -m nose2 --plugin=nose2.plugins.mp -N 16
+	poetry run python -m nose2 --plugin=nose2.plugins.mp -N 16
 	@touch $@
 
 .build/lint: $(CHECKDEPS)
-	pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=ankirspy anki
+	poetry run pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=ankirspy anki
 	@touch $@
 
 .build/imports: $(CHECKDEPS)
-	isort $(ISORTARGS) --check
+	poetry run isort $(ISORTARGS) --check
 	@touch $@
 
 .build/fmt: $(CHECKDEPS)
-	black --check $(BLACKARGS)
+	poetry run black --check $(BLACKARGS)
 	@touch $@
 
 # Building
@@ -72,7 +72,7 @@ build: $(CHECKDEPS)
 PROTODEPS := $(wildcard ../anki-proto/*.proto)
 
 .build/py-proto: .build/dev-deps $(PROTODEPS)
-	protoc --proto_path=../anki-proto --python_out=anki --mypy_out=anki $(PROTODEPS)
+	poetry run protoc --proto_path=../anki-proto --python_out=anki --mypy_out=anki $(PROTODEPS)
 	@touch $@
 
 install: build
