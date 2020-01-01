@@ -23,6 +23,7 @@ isort = { git = "https://github.com/ankitects/isort", branch = "develop" }
 # fixme: git until pylint switches to isort 5
 pylint = { git = "https://github.com/ankitects/pylint" }
 black = "^19.10b0"
+nose2 = "^0.9.1"
 
 [build-system]
 requires = ["poetry>=0.12"]
