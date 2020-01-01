@@ -24,14 +24,14 @@ JSDEPS := $(patsubst ts/src/%.ts, web/%.js, $(TSDEPS))
 ######################
 
 .build/js: $(TSDEPS)
-	(cd ts && npm run build)
+	(cd ts && npm i && npm run build)
 	@touch $@
 
 # Checking typescript
 ######################
 
 .build/ts-fmt: $(TSDEPS)
-	(cd ts && npm run check-pretty)
+	(cd ts && npm i && npm run check-pretty)
 	@touch $@
 
 # Checking
