@@ -56,7 +56,7 @@ LIBPY := ../anki-lib-python
 
 CHECKDEPS := $(shell find aqt tests -name '*.py')
 
-.build/mypy: $(CHECKDEPS)
+.build/mypy: $(CHECKDEPS) .build/qt-stubs
 	MYPYPATH=$(LIBPY) poetry run mypy aqt
 	@touch $@
 
@@ -74,6 +74,10 @@ CHECKDEPS := $(shell find aqt tests -name '*.py')
 
 .build/fmt: $(CHECKDEPS)
 	poetry run black --check $(BLACKARGS)
+	@touch $@
+
+.build/qt-stubs:
+	poetry run ./tools/typecheck-setup.sh
 	@touch $@
 
 # Building
