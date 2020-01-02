@@ -19,3 +19,5 @@ aqt_data/web/reviewer-bottom.js
 aqt_data/web/reviewer.js
 aqt_data/web/webview.js
 dist
+aqt.egg-info
+build

@@ -21,21 +21,20 @@ jobs:
         run: |
           # add requirements
           sudo apt install portaudio19-dev
-          pip install --upgrade pip poetry setuptools
           python3.6 -m venv ~/pyenv
           . ~/pyenv/bin/activate
+          pip install --upgrade pip setuptools
           pip install -r requirements.qt
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-proto.git)
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-lib-rust.git)
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-py-bindings.git && cd anki-py-bindings && make build BUILDFLAGS="")
-          pip install ../build/ankirspy*
-          (cd .. && git clone --depth 1 https://github.com/ankitects/anki-lib-python.git && cd anki-lib-python && make build)
-          pip install ../build/*.whl
-
-          # check
-          make build check
-
-          # make sure global install works
+          cd ..
+          for p in proto lib-rust lib-rspy lib-python; do git clone --depth 1 https://github.com/ankitects/anki-$p.git; done
+          (cd anki-lib-rspy && make develop build BUILDFLAGS="")
+          (cd anki-lib-python && make develop build)
+          # check module
+          cd anki-qt
+          make check build
+          # make sure wheel works
           deactivate
-          pip install ../build/*.whl
-          cd .. && python -c 'import aqt'
+          cd ..
+          pip install -r anki-qt/requirements.qt
+          pip install build/*.whl
+          python -c 'import aqt'

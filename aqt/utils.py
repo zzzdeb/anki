@@ -15,8 +15,12 @@ from aqt.qt import *
 
 
 def aqt_data_folder() -> str:
-    src_folder = os.path.join(os.path.dirname(__file__), "..", "aqt_data")
-    return src_folder
+    # wheel install?
+    dir = os.path.join(sys.prefix, "aqt_data")
+    if not os.path.exists(dir) or not os.listdir(dir):
+        # running in place?
+        dir = os.path.join(os.path.dirname(__file__), "..", "aqt_data")
+    return dir
 
 
 def openHelp(section):

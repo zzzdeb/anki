@@ -14,40 +14,50 @@ $(shell mkdir -p .build ../build)
 PHONY: all
 all: check
 
-# Typescript source
-######################
+.build/run-deps: setup.py
+	pip install -e .
+	@touch $@
+
+.build/dev-deps: requirements.dev
+	pip install -r requirements.dev
+	@touch $@
+
+.build/ui: $(shell find designer -type f)
+	./tools/build_ui.sh
+	@touch $@
 
 TSDEPS := $(wildcard ts/src/*.ts)
-JSDEPS := $(patsubst ts/src/%.ts, web/%.js, $(TSDEPS))
-
-# Building typescript
-######################
 
 .build/js: $(TSDEPS)
 	(cd ts && npm i && npm run build)
 	@touch $@
 
-# Checking typescript
-######################
-
-.build/ts-fmt: $(TSDEPS)
-	(cd ts && npm i && npm run check-pretty)
-	@touch $@
+BUILD_STEPS := .build/run-deps .build/dev-deps .build/js .build/ui
 
 # Checking
 ######################
 
-.PHONY: check fix build
+.PHONY: check
+check: $(BUILD_STEPS) .build/mypy .build/test .build/fmt .build/imports .build/lint .build/ts-fmt
 
-check: build .build/mypy .build/test .build/fmt .build/imports .build/lint .build/ts-fmt
-
-fix:
-	poetry run isort $(ISORTARGS)
-	poetry run black $(BLACKARGS)
+.PHONY: fix
+fix: $(BUILD_STEPS)
+	isort $(ISORTARGS)
+	black $(BLACKARGS)
 	(cd ts && npm run pretty)
 
+.PHONY: clean
 clean:
-	rm -rf .build
+	rm -rf .build aqt.egg-info build dist
+
+# Checking Typescript
+######################
+
+JSDEPS := $(patsubst ts/src/%.ts, web/%.js, $(TSDEPS))
+
+.build/ts-fmt: $(TSDEPS)
+	(cd ts && npm i && npm run check-pretty)
+	@touch $@
 
 # Checking python
 ######################
@@ -57,45 +67,39 @@ LIBPY := ../anki-lib-python
 CHECKDEPS := $(shell find aqt tests -name '*.py')
 
 .build/mypy: $(CHECKDEPS) .build/qt-stubs
-	MYPYPATH=$(LIBPY) poetry run mypy aqt
+	MYPYPATH=$(LIBPY) mypy aqt
 	@touch $@
 
 .build/test: $(CHECKDEPS)
-	PYTHONPATH=$(LIBPY) poetry run python -m nose2 --plugin=nose2.plugins.mp -N 16
+	python -m nose2 --plugin=nose2.plugins.mp -N 16
 	@touch $@
 
 .build/lint: $(CHECKDEPS)
-	PYTHONPATH=$(LIBPY) poetry run pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=PyQt5,ankirspy aqt
+	pylint -j 0 --rcfile=.pylintrc -f colorized --extension-pkg-whitelist=PyQt5,ankirspy aqt
 	@touch $@
 
 .build/imports: $(CHECKDEPS)
-	poetry run isort $(ISORTARGS) --check
+	isort $(ISORTARGS) --check
 	@touch $@
 
 .build/fmt: $(CHECKDEPS)
-	poetry run black --check $(BLACKARGS)
+	black --check $(BLACKARGS)
 	@touch $@
 
 .build/qt-stubs:
-	poetry run ./tools/typecheck-setup.sh
+	./tools/typecheck-setup.sh
 	@touch $@
 
 # Building
 ######################
 
-.PHONY: build
-
 # we only want the wheel when building, but passing -f wheel to poetry
 # breaks the inclusion of files listed in pyproject.toml
-build: $(CHECKDEPS) .build/ui .build/js
+.PHONY: build
+build: $(BUILD_STEPS)
 	rm -rf dist
-	poetry build
+	python setup.py bdist_wheel
 	rsync -a dist/*.whl ../build/
 
-.build/dev-deps: pyproject.toml
-	poetry install --no-root
-	@touch $@
-
-.build/ui: .build/dev-deps $(shell find designer -type f)
-	./tools/build_ui.sh
-	@touch $@
+.PHONY: develop
+develop: $(BUILD_STEPS)
