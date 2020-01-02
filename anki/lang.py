@@ -131,24 +131,9 @@ def ngettext(single: str, plural: str, n: int) -> str:
     return localTranslation().ngettext(single, plural, n)
 
 
-def langDir() -> str:
-    from anki.utils import isMac
-
-    filedir = os.path.dirname(os.path.abspath(__file__))
-    if isMac:
-        dir = os.path.abspath(filedir + "/../../Resources/locale")
-    else:
-        dir = os.path.join(filedir, "locale")
-    if not os.path.isdir(dir):
-        dir = os.path.join(os.path.dirname(sys.argv[0]), "locale")
-    if not os.path.isdir(dir):
-        dir = os.path.abspath(os.path.join(filedir, "..", "locale"))
-    return dir
-
-
-def setLang(lang: str, local: bool = True) -> None:
+def setLang(lang: str, locale_dir: str, local: bool = True) -> None:
     lang = mungeCode(lang)
-    trans = gettext.translation("anki", langDir(), languages=[lang], fallback=True)
+    trans = gettext.translation("anki", locale_dir, languages=[lang], fallback=True)
     if local:
         threadLocal.currentLang = lang
         threadLocal.currentTranslation = trans
@@ -180,4 +165,4 @@ def mungeCode(code: str) -> Any:
 
 
 if not currentTranslation:
-    setLang("en_US", local=False)
+    setLang("en_US", locale_dir="", local=False)
