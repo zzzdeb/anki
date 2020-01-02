@@ -14,7 +14,6 @@ def package_files(directory):
     return entries
 
 extra_files = package_files('aqt_data')
-print(extra_files)
 
 setuptools.setup(
     name="aqt",
