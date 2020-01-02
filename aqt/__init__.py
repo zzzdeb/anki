@@ -15,9 +15,9 @@ from typing import Any, Optional
 import anki.lang
 from anki import version as _version
 from anki.consts import HELP_SITE
-from anki.lang import langDir
 from anki.utils import checksum, isLin, isMac
 from aqt.qt import *
+from aqt.utils import locale_dir
 
 appVersion = _version
 appWebsite = "http://ankisrs.net/"
@@ -129,23 +129,21 @@ dialogs = DialogManager()
 # Qt requires its translator to be installed before any GUI widgets are
 # loaded, and we need the Qt language to match the gettext language or
 # translated shortcuts will not work.
+#
+# The Qt translator needs to be retained to work.
 
-_gtrans: Optional[Any] = None
 _qtrans: Optional[QTranslator] = None
 
 
 def setupLang(
     pm: ProfileManager, app: QApplication, force: Optional[str] = None
 ) -> None:
-    global _gtrans, _qtrans
+    global _qtrans
     try:
         locale.setlocale(locale.LC_ALL, "")
     except:
         pass
     lang = force or pm.meta["defaultLang"]
-    dir = langDir()
-    # gettext
-    _gtrans = gettext.translation("anki", dir, languages=[lang], fallback=True)
 
     def fn__(arg):
         print("accessing _ without importing from anki.lang will break in the future")
@@ -165,15 +163,16 @@ def setupLang(
 
     builtins.__dict__["_"] = fn__
     builtins.__dict__["ngettext"] = fn_ngettext
-    anki.lang.setLang(lang, local=False)
+    ldir = locale_dir()
+    anki.lang.setLang(lang, ldir, local=False)
     if lang in ("he", "ar", "fa"):
         app.setLayoutDirection(Qt.RightToLeft)
     else:
         app.setLayoutDirection(Qt.LeftToRight)
     # qt
     _qtrans = QTranslator()
-    if _qtrans.load("qt_" + lang, dir):
-        app.installTranslator(_qtrans)
+    if _qtrans.load("qt_" + lang, ldir):
+        assert app.installTranslator(_qtrans)
 
 
 # App initialisation

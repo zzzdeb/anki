@@ -23,6 +23,9 @@ def aqt_data_folder() -> str:
     return dir
 
 
+def locale_dir() -> str:
+    return os.path.join(aqt_data_folder(), "locale")
+
 def openHelp(section):
     link = aqt.appHelpSite
     if section:
