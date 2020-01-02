@@ -4,9 +4,7 @@
 # Please leave the coding line in this file to prevent xgettext complaining.
 
 import gettext
-import os
 import re
-import sys
 import threading
 from typing import Any
 
