@@ -1,3 +1,7 @@
+# This fork #
+1. Enables multiple instances for different profiles
+
+# Orig #
 This repo contains all the code for the computer version of Anki.
 
 If you'd like to try development builds of Anki but don't feel comfortable
