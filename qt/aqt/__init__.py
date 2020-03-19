@@ -193,9 +193,10 @@ class AnkiApp(QApplication):
     KEY = "anki" + checksum(getpass.getuser())
     TMOUT = 30000
 
-    def __init__(self, argv):
+    def __init__(self, argv, KEYAPPEND=''):
         QApplication.__init__(self, argv)
         self._argv = argv
+        self.KEY += KEYAPPEND
 
     def secondInstance(self):
         # we accept only one command line argument. if it's missing, send
@@ -363,7 +364,7 @@ def _run(argv=None, exec=True):
     # create the app
     QCoreApplication.setApplicationName("Anki")
     QGuiApplication.setDesktopFileName("anki.desktop")
-    app = AnkiApp(argv)
+    app = AnkiApp(argv, KEYAPPEND=opts.profile)
     if app.secondInstance():
         # we've signaled the primary instance, so we should close
         return
