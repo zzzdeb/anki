@@ -10,7 +10,7 @@ import os
 import sys
 import tempfile
 import traceback
-from typing import Any, Optional
+from typing import Any, Callable, Dict, Optional, Union
 
 import anki.buildinfo
 import anki.lang
@@ -24,9 +24,9 @@ from aqt.utils import locale_dir
 assert anki.buildinfo.buildhash == aqt.buildinfo.buildhash
 
 appVersion = _version
-appWebsite = "http://ankisrs.net/"
-appChanges = "http://ankisrs.net/docs/changes.html"
-appDonate = "http://ankisrs.net/support/"
+appWebsite = "https://apps.ankiweb.net/"
+appChanges = "https://apps.ankiweb.net/docs/changes.html"
+appDonate = "https://apps.ankiweb.net/support/"
 appShared = "https://ankiweb.net/shared/"
 appUpdate = "https://ankiweb.net/update/desktop"
 appHelpSite = HELP_SITE
@@ -64,21 +64,22 @@ except ImportError as e:
 
 
 from aqt import addcards, browser, editcurrent  # isort:skip
-from aqt import stats, about, preferences  # isort:skip
+from aqt import stats, about, preferences, mediasync  # isort:skip
 
 
 class DialogManager:
 
-    _dialogs = {
+    _dialogs: Dict[str, list] = {
         "AddCards": [addcards.AddCards, None],
         "Browser": [browser.Browser, None],
         "EditCurrent": [editcurrent.EditCurrent, None],
         "DeckStats": [stats.DeckStats, None],
         "About": [about.show, None],
         "Preferences": [preferences.Preferences, None],
+        "sync_log": [mediasync.MediaSyncDialog, None],
     }
 
-    def open(self, name, *args):
+    def open(self, name: str, *args: Any) -> Any:
         (creator, instance) = self._dialogs[name]
         if instance:
             if instance.windowState() & Qt.WindowMinimized:
@@ -93,17 +94,17 @@ class DialogManager:
             self._dialogs[name][1] = instance
             return instance
 
-    def markClosed(self, name):
+    def markClosed(self, name: str):
         self._dialogs[name] = [self._dialogs[name][0], None]
 
     def allClosed(self):
         return not any(x[1] for x in self._dialogs.values())
 
-    def closeAll(self, onsuccess):
+    def closeAll(self, onsuccess: Callable[[], None]) -> Optional[bool]:
         # can we close immediately?
         if self.allClosed():
             onsuccess()
-            return
+            return None
 
         # ask all windows to close and await a reply
         for (name, (creator, instance)) in self._dialogs.items():
@@ -124,6 +125,34 @@ class DialogManager:
                 instance.closeWithCallback(callback)
 
         return True
+
+    def register_dialog(
+        self, name: str, creator: Union[Callable, type], instance: Optional[Any] = None
+    ):
+        """Allows add-ons to register a custom dialog to be managed by Anki's dialog
+        manager, which ensures that only one copy of the window is open at once,
+        and that the dialog cleans up asynchronously when the collection closes
+        
+        Please note that dialogs added in this manner need to define a close behavior
+        by either:
+        
+            - setting `dialog.silentlyClose = True` to have it close immediately
+            - define a `dialog.closeWithCallback()` method that is called when closed
+              by the dialog manager
+        
+        TODO?: Implement more restrictive type check to ensure these requirements
+        are met
+        
+        Arguments:
+            name {str} -- Name/identifier of the dialog in question
+            creator {Union[Callable, type]} -- A class or function to create new
+                                               dialog instances with
+        
+        Keyword Arguments:
+            instance {Optional[Any]} -- An optional existing instance of the dialog
+                                        (default: {None})
+        """
+        self._dialogs[name] = [creator, instance]
 
 
 dialogs = DialogManager()
@@ -147,8 +176,8 @@ def setupLang(
         locale.setlocale(locale.LC_ALL, "")
     except:
         pass
-    lang = force or pm.meta["defaultLang"]
 
+    # add _ and ngettext globals used by legacy code
     def fn__(arg):
         print("accessing _ without importing from anki.lang will break in the future")
         print("".join(traceback.format_stack()[-2]))
@@ -167,15 +196,26 @@ def setupLang(
 
     builtins.__dict__["_"] = fn__
     builtins.__dict__["ngettext"] = fn_ngettext
+
+    # get lang and normalize into ja/zh-CN form
+    lang = force or pm.meta["defaultLang"]
+    lang = anki.lang.lang_to_disk_lang(lang)
+
+    # load gettext catalog
     ldir = locale_dir()
-    anki.lang.setLang(lang, ldir, local=False)
+    anki.lang.set_lang(lang, ldir)
+
+    # switch direction for RTL languages
     if lang in ("he", "ar", "fa"):
         app.setLayoutDirection(Qt.RightToLeft)
     else:
         app.setLayoutDirection(Qt.LeftToRight)
-    # qt
+
+    # load qt translations
     _qtrans = QTranslator()
-    if _qtrans.load("qt_" + lang, ldir):
+    qt_dir = os.path.join(ldir, "qt")
+    qt_lang = lang.replace("-", "_")
+    if _qtrans.load("qtbase_" + qt_lang, qt_dir):
         app.installTranslator(_qtrans)
 
 

@@ -6,10 +6,12 @@ import re
 import sys
 import traceback
 
+from markdown import markdown
+
 from anki.lang import _
 from aqt import mw
 from aqt.qt import *
-from aqt.utils import showText, showWarning, supportText
+from aqt.utils import TR, showText, showWarning, supportText, tr
 
 if not os.environ.get("DEBUG"):
 
@@ -80,8 +82,6 @@ your system's temporary folder may be incorrect."""
                     "Your firewall or antivirus program is preventing Anki from creating a connection to itself. Please add an exception for Anki."
                 )
             )
-        if "Pyaudio not" in error:
-            return showWarning(_("Please install PyAudio"))
         if "no default input" in error.lower():
             return showWarning(
                 _(
@@ -100,62 +100,14 @@ your system's temporary folder may be incorrect."""
                 )
             )
         if "disk I/O error" in error:
-            return showWarning(
-                _(
-                    """\
-An error occurred while accessing the database.
+            showWarning(markdown(tr(TR.ERRORS_ACCESSING_DB)))
+            return
 
-Possible causes:
-
-- Antivirus, firewall, backup, or synchronization software may be \
-  interfering with Anki. Try disabling such software and see if the \
-  problem goes away.
-- Your disk may be full.
-- The Documents/Anki folder may be on a network drive.
-- Files in the Documents/Anki folder may not be writeable.
-- Your hard disk may have errors.
-
-It's a good idea to run Tools>Check Database to ensure your collection \
-is not corrupt.
-"""
-                )
-            )
-
-        stdText = _(
-            """\
-<h1>Error</h1>
-
-<p>An error occurred. Please use <b>Tools &gt; Check Database</b> to see if \
-that fixes the problem.</p>
-
-<p>If problems persist, please report the problem on our \
-<a href="https://help.ankiweb.net">support site</a>. Please copy and paste \
- the information below into your report.</p>"""
-        )
-
-        pluginText = _(
-            """\
-<h1>Error</h1>
-
-<p>An error occurred. Please start Anki while holding down the shift \
-key, which will temporarily disable the add-ons you have installed.</p>
-
-<p>If the issue only occurs when add-ons are enabled, please use the \
-Tools&gt;Add-ons menu item to disable some add-ons and restart Anki, \
-repeating until you discover the add-on that is causing the problem.</p>
-
-<p>When you've discovered the add-on that is causing the problem, please \
-report the issue on the <a href="https://help.ankiweb.net/discussions/add-ons/">\
-add-ons section</a> of our support site.
-
-<p>Debug info:</p>
-"""
-        )
         if self.mw.addonManager.dirty:
-            txt = pluginText
+            txt = markdown(tr(TR.ERRORS_ADDONS_ACTIVE_POPUP))
             error = supportText() + self._addonText(error) + "\n" + error
         else:
-            txt = stdText
+            txt = markdown(tr(TR.ERRORS_STANDARD_POPUP))
             error = supportText() + "\n" + error
 
         # show dialog
@@ -170,7 +122,7 @@ add-ons section</a> of our support site.
         addons = [
             mw.addonManager.addonName(i) for i in dict.fromkeys(reversed(matches))
         ]
-        txt = _("""Add-ons possibly involved: {}\n""")
         # highlight importance of first add-on:
         addons[0] = "<b>{}</b>".format(addons[0])
-        return txt.format(", ".join(addons))
+        addons_str = ", ".join(addons)
+        return tr(TR.ADDONS_POSSIBLY_INVOLVED, addons=addons_str) + "\n"

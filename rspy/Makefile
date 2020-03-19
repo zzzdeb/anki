@@ -1,4 +1,20 @@
-SHELL := bash
+SHELL := /bin/bash
+FIND := $(if $(wildcard /bin/find),/bin/find,/usr/bin/find)
+
+ifndef OS
+	OS := unknown
+endif
+
+ifeq ($(OS),Windows_NT)
+	ifndef PYTHON_BIN
+		PYTHON_BIN := python
+	endif
+else
+	ifndef PYTHON_BIN
+		PYTHON_BIN := python3
+	endif
+endif
+
 .SHELLFLAGS := -eu -o pipefail -c
 .DELETE_ON_ERROR:
 MAKEFLAGS += --warn-undefined-variables
@@ -8,17 +24,36 @@ $(shell mkdir -p .build ../dist)
 
 OUTDIR := ../dist
 BUILDFLAGS := --release --strip
+DEVFLAGS :=
+RSPY_TARGET_DIR ?= target
+
+QT_FTL_TEMPLATES := ../qt/ftl
+QT_FTL_LOCALES := ../qt/ftl/repo/desktop
 
 .PHONY: all develop build check fix clean
 
 all: develop
 
-develop: .build/tools .build/vernum
-	maturin develop $(BUILDFLAGS)
+develop: .build/develop
 
-build: .build/tools .build/vernum
+DEPS := .build/tools .build/vernum ../meta/buildhash \
+	$(wildcard $(QT_FTL_TEMPLATES)/*.ftl) \
+	$(wildcard $(QT_FTL_LOCALES)/*/*.ftl) \
+	$(shell ${FIND} ../rslib/src -name '*.rs') $(wildcard ../proto/*) \
+	$(shell ${FIND} ../rslib/ftl -type f) \
+	$(shell ${FIND} ./src -type f) 
+
+.build/develop: $(DEPS)
+	touch ../proto/backend.proto
+	FTL_TEMPLATE_DIRS="$(QT_FTL_TEMPLATES)" FTL_LOCALE_DIRS="$(QT_FTL_LOCALES)" \
+		CARGO_TARGET_DIR="$(RSPY_TARGET_DIR)" maturin develop $(DEVFLAGS)
+	touch $@
+
+build: $(DEPS)
 	rm -rf $(OUTDIR)/ankirspy*
-	maturin build -i $(shell which python3) -o $(OUTDIR) $(BUILDFLAGS)
+	touch ../proto/backend.proto
+	FTL_TEMPLATE_DIRS="$(QT_FTL_TEMPLATES)" FTL_LOCALE_DIRS="$(QT_FTL_LOCALES)" \
+		maturin build -i $(shell which ${PYTHON_BIN}) -o $(OUTDIR) $(BUILDFLAGS)
 
 check: .build/check
 
@@ -32,7 +67,7 @@ clean:
 RUST_TOOLCHAIN := $(shell cat rust-toolchain)
 
 .build/tools: requirements.txt rust-toolchain
-	pip install -r requirements.txt
+	python -m pip install -r requirements.txt
 	rustup toolchain install $(RUST_TOOLCHAIN)
 	rustup component add rustfmt-preview --toolchain $(RUST_TOOLCHAIN)
 	rustup component add clippy-preview --toolchain $(RUST_TOOLCHAIN)

@@ -10,7 +10,8 @@ import aqt
 from anki.lang import _
 from aqt import AnkiQt
 from aqt.qt import *
-from aqt.utils import askUser, openHelp, showInfo
+from aqt.theme import theme_manager
+from aqt.utils import TR, askUser, openHelp, showInfo, showWarning, tr
 
 
 class Preferences(QDialog):
@@ -58,8 +59,11 @@ class Preferences(QDialog):
 
     def langIdx(self):
         codes = [x[1] for x in anki.lang.langs]
+        lang = anki.lang.currentLang
+        if lang in anki.lang.compatMap:
+            lang = anki.lang.compatMap[lang]
         try:
-            return codes.index(anki.lang.getLang())
+            return codes.index(lang)
         except:
             return codes.index("en_US")
 
@@ -91,8 +95,10 @@ class Preferences(QDialog):
         f.dayLearnFirst.setChecked(qc.get("dayLearnFirst", False))
         if self.mw.col.schedVer() != 2:
             f.dayLearnFirst.setVisible(False)
+            f.new_timezone.setVisible(False)
         else:
             f.newSched.setChecked(True)
+            f.new_timezone.setChecked(self.mw.col.sched._new_timezone_enabled())
 
     def updateCollection(self):
         f = self.form
@@ -117,6 +123,14 @@ class Preferences(QDialog):
         qc["addToCur"] = not f.useCurrent.currentIndex()
         qc["dayLearnFirst"] = f.dayLearnFirst.isChecked()
         self._updateDayCutoff()
+        if self.mw.col.schedVer() != 1:
+            was_enabled = self.mw.col.sched._new_timezone_enabled()
+            is_enabled = f.new_timezone.isChecked()
+            if was_enabled != is_enabled:
+                if is_enabled:
+                    self.mw.col.sched.set_creation_offset()
+                else:
+                    self.mw.col.sched.clear_creation_offset()
         self._updateSchedVer(f.newSched.isChecked())
         d.setMod()
 
@@ -177,6 +191,8 @@ class Preferences(QDialog):
     ######################################################################
 
     def setupNetwork(self):
+        self.form.media_log.setText(tr(TR.SYNC_MEDIA_LOG_BUTTON))
+        self.form.media_log.clicked.connect(self.on_media_log)
         self.form.syncOnProgramOpen.setChecked(self.prof["autoSync"])
         self.form.syncMedia.setChecked(self.prof["syncMedia"])
         if not self.prof["syncKey"]:
@@ -184,6 +200,9 @@ class Preferences(QDialog):
         else:
             self.form.syncUser.setText(self.prof.get("syncUser", ""))
             self.form.syncDeauth.clicked.connect(self.onSyncDeauth)
+
+    def on_media_log(self):
+        self.mw.media_syncer.show_sync_log()
 
     def _hideAuth(self):
         self.form.syncDeauth.setVisible(False)
@@ -196,9 +215,12 @@ Not currently enabled; click the sync button in the main window to enable."""
             )
         )
 
-    def onSyncDeauth(self):
+    def onSyncDeauth(self) -> None:
+        if self.mw.media_syncer.is_syncing():
+            showWarning("Can't log out while sync in progress.")
+            return
         self.prof["syncKey"] = None
-        self.mw.col.media.forceResync()
+        self.mw.col.media.force_resync()
         self._hideAuth()
 
     def updateNetwork(self):
@@ -226,6 +248,11 @@ Not currently enabled; click the sync button in the main window to enable."""
         self.form.pasteInvert.setChecked(self.prof.get("pasteInvert", False))
         self.form.showPlayButtons.setChecked(self.prof.get("showPlayButtons", True))
         self.form.nightMode.setChecked(self.mw.pm.night_mode())
+        if theme_manager.macos_dark_mode():
+            self.form.nightMode.setChecked(True)
+            self.form.nightMode.setText(tr(TR.PREFERENCES_DARK_MODE_ACTIVE))
+        else:
+            self.form.nightMode.setChecked(self.mw.pm.night_mode())
         self.form.interrupt_audio.setChecked(self.mw.pm.interrupt_audio())
 
     def updateOptions(self):
@@ -239,9 +266,17 @@ Not currently enabled; click the sync button in the main window to enable."""
             restart_required = True
         self.prof["showPlayButtons"] = self.form.showPlayButtons.isChecked()
 
-        if self.mw.pm.night_mode() != self.form.nightMode.isChecked():
-            self.mw.pm.set_night_mode(not self.mw.pm.night_mode())
-            restart_required = True
+        if theme_manager.macos_dark_mode():
+            if not self.form.nightMode.isChecked():
+                # user is trying to turn it off, but it's forced
+                showInfo(
+                    tr(TR.PREFERENCES_DARK_MODE_DISABLE), textFormat="rich",
+                )
+                openHelp("profileprefs")
+        else:
+            if self.mw.pm.night_mode() != self.form.nightMode.isChecked():
+                self.mw.pm.set_night_mode(not self.mw.pm.night_mode())
+                restart_required = True
 
         self.mw.pm.set_interrupt_audio(self.form.interrupt_audio.isChecked())
 

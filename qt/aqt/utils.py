@@ -1,14 +1,19 @@
 # Copyright: Ankitects Pty Ltd and contributors
 # -*- coding: utf-8 -*-
 # License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
+
+from __future__ import annotations
+
 import os
 import re
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
+import anki
 import aqt
 from anki.lang import _
+from anki.rsbackend import TR
 from anki.utils import invalidFilename, isMac, isWin, noBundledLibs, versionWithBuild
 from aqt.qt import *
 from aqt.theme import theme_manager
@@ -25,6 +30,11 @@ def aqt_data_folder() -> str:
 
 def locale_dir() -> str:
     return os.path.join(aqt_data_folder(), "locale")
+
+
+def tr(key: TR, **kwargs: Union[str, int, float]) -> str:
+    "Shortcut to access Fluent translations."
+    return anki.lang.current_i18n.translate(key, **kwargs)
 
 
 def openHelp(section):

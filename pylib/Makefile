@@ -1,11 +1,13 @@
-SHELL := bash
+SHELL := /bin/bash
+FIND := $(if $(wildcard /bin/find),/bin/find,/usr/bin/find)
+
 .SHELLFLAGS := -eu -o pipefail -c
 .DELETE_ON_ERROR:
 MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
 RUNARGS :=
 .SUFFIXES:
-BLACKARGS := -t py36 anki tests setup.py tools/*.py --exclude='backend_pb2|buildinfo'
+BLACKARGS := -t py36 anki tests setup.py tools/*.py --exclude='_pb2|buildinfo'
 ISORTARGS := anki tests setup.py
 
 $(shell mkdir -p .build ../dist)
@@ -14,17 +16,19 @@ PHONY: all
 all: check
 
 .build/run-deps: setup.py
-	pip install -e .
+	python -m pip install -e .
 	@touch $@
 
 .build/dev-deps: requirements.dev
-	pip install -r requirements.dev
+	python -m pip install -r requirements.dev
 	@touch $@
 
 PROTODEPS := $(wildcard ../proto/*.proto)
 
 .build/py-proto: .build/dev-deps $(PROTODEPS)
 	protoc --proto_path=../proto --python_out=anki --mypy_out=anki $(PROTODEPS)
+	perl -i'' -pe 's/from fluent_pb2/from anki.fluent_pb2/' anki/backend_pb2.pyi
+	perl -i'' -pe 's/import fluent_pb2/import anki.fluent_pb2/' anki/backend_pb2.py
 	@touch $@
 
 .build/hooks: tools/genhooks.py tools/hookslib.py
@@ -52,7 +56,7 @@ clean:
 # Checking python
 ######################
 
-CHECKDEPS := $(shell find anki tests -name '*.py' | grep -v buildinfo.py)
+CHECKDEPS := $(shell ${FIND} anki tests -name '*.py' | grep -v buildinfo.py)
 
 .build/mypy: $(CHECKDEPS)
 	mypy anki

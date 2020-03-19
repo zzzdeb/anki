@@ -1,12 +1,18 @@
 # coding: utf-8
 import pytest
 
+from anki.consts import *
 from anki.find import Finder
 from tests.shared import getEmptyCol
 
 
+class DummyCollection:
+    def weakref(self):
+        return None
+
+
 def test_parse():
-    f = Finder(None)
+    f = Finder(DummyCollection())
     assert f._tokenize("hello world") == ["hello", "world"]
     assert f._tokenize("hello  world") == ["hello", "world"]
     assert f._tokenize("one -two") == ["one", "-", "two"]
@@ -91,13 +97,13 @@ def test_findCards():
     assert len(deck.findCards('"goats are"')) == 1
     # card states
     c = f.cards()[0]
-    c.queue = c.type = 2
+    c.queue = c.type = CARD_TYPE_REV
     assert deck.findCards("is:review") == []
     c.flush()
     assert deck.findCards("is:review") == [c.id]
     assert deck.findCards("is:due") == []
     c.due = 0
-    c.queue = 2
+    c.queue = QUEUE_TYPE_REV
     c.flush()
     assert deck.findCards("is:due") == [c.id]
     assert len(deck.findCards("-is:due")) == 4

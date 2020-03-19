@@ -11,6 +11,7 @@ import sys
 pylib = os.path.join(os.path.dirname(__file__), "..", "..", "pylib")
 sys.path.append(pylib)
 
+
 from tools.hookslib import Hook, update_file
 
 # Hook list
@@ -26,9 +27,24 @@ hooks = [
         title.""",
     ),
     Hook(
-        name="deck_browser_did_render",
-        args=["deck_browser: aqt.deckbrowser.DeckBrowser"],
-        doc="""Allow to update the deck browser window. E.g. change its title.""",
+        name="overview_will_render_content",
+        args=[
+            "overview: aqt.overview.Overview",
+            "content: aqt.overview.OverviewContent",
+        ],
+        doc="""Used to modify HTML content sections in the overview body
+
+        'content' contains the sections of HTML content the overview body
+        will be updated with.
+
+        When modifying the content of a particular section, please make sure your
+        changes only perform the minimum required edits to make your add-on work.
+        You should avoid overwriting or interfering with existing data as much
+        as possible, instead opting to append your own changes, e.g.:
+
+            def on_overview_will_render_content(overview, content):
+                content.table += "\n<div>my html</div>"
+        """,
     ),
     Hook(
         name="reviewer_did_show_question",
@@ -74,6 +90,32 @@ hooks = [
         legacy_hook="reviewCleanup",
         doc="Called before Anki transitions from the review screen to another screen.",
     ),
+    # Debug
+    ###################
+    Hook(
+        name="debug_console_will_show",
+        args=["debug_window: QDialog"],
+        doc="""Allows editing the debug window. E.g. setting a default code, or
+        previous code.""",
+    ),
+    Hook(
+        name="debug_console_did_evaluate_python",
+        args=["output: str", "query: str", "debug_window: QDialog"],
+        return_type="str",
+        doc="""Allows processing the debug result. E.g. logging queries and
+        result, saving last query to display it later...""",
+    ),
+    # Card layout
+    ###################
+    Hook(
+        name="card_layout_will_show",
+        args=["clayout: aqt.clayout.CardLayout"],
+        doc="""Allow to change the display of the card layout. After most values are
+         set and before the window is actually shown.""",
+    ),
+    # Multiple windows
+    ###################
+    # reviewer, clayout and browser
     Hook(
         name="card_will_show",
         args=["text: str", "card: Card", "kind: str"],
@@ -81,8 +123,58 @@ hooks = [
         legacy_hook="prepareQA",
         doc="Can modify card text before review/preview.",
     ),
+    # Deck browser
+    ###################
+    Hook(
+        name="deck_browser_did_render",
+        args=["deck_browser: aqt.deckbrowser.DeckBrowser"],
+        doc="""Allow to update the deck browser window. E.g. change its title.""",
+    ),
+    Hook(
+        name="deck_browser_will_render_content",
+        args=[
+            "deck_browser: aqt.deckbrowser.DeckBrowser",
+            "content: aqt.deckbrowser.DeckBrowserContent",
+        ],
+        doc="""Used to modify HTML content sections in the deck browser body
+        
+        'content' contains the sections of HTML content the deck browser body
+        will be updated with.
+        
+        When modifying the content of a particular section, please make sure your
+        changes only perform the minimum required edits to make your add-on work.
+        You should avoid overwriting or interfering with existing data as much
+        as possible, instead opting to append your own changes, e.g.:
+        
+            def on_deck_browser_will_render_content(deck_browser, content):
+                content.stats += "\n<div>my html</div>"
+        """,
+    ),
+    # Deck options
+    ###################
+    Hook(
+        name="deck_conf_did_setup_ui_form",
+        args=["deck_conf: aqt.deckconf.DeckConf"],
+        doc="Allows modifying or adding widgets in the deck options UI form",
+    ),
+    Hook(
+        name="deck_conf_will_show",
+        args=["deck_conf: aqt.deckconf.DeckConf"],
+        doc="Allows modifying the deck options dialog before it is shown",
+    ),
+    Hook(
+        name="deck_conf_did_load_config",
+        args=["deck_conf: aqt.deckconf.DeckConf", "deck: Any", "config: Any"],
+        doc="Called once widget state has been set from deck config",
+    ),
+    Hook(
+        name="deck_conf_will_save_config",
+        args=["deck_conf: aqt.deckconf.DeckConf", "deck: Any", "config: Any"],
+        doc="Called before widget state is saved to config",
+    ),
     # Browser
     ###################
+    Hook(name="browser_will_show", args=["browser: aqt.browser.Browser"]),
     Hook(
         name="browser_menus_did_init",
         args=["browser: aqt.browser.Browser"],
@@ -97,6 +189,51 @@ hooks = [
         name="browser_did_change_row",
         args=["browser: aqt.browser.Browser"],
         legacy_hook="browser.rowChanged",
+    ),
+    Hook(
+        name="browser_will_build_tree",
+        args=[
+            "handled: bool",
+            "tree: aqt.browser.SidebarItem",
+            "stage: aqt.browser.SidebarStage",
+            "browser: aqt.browser.Browser",
+        ],
+        return_type="bool",
+        doc="""Used to add or replace items in the browser sidebar tree
+        
+        'tree' is the root SidebarItem that all other items are added to.
+        
+        'stage' is an enum describing the different construction stages of
+        the sidebar tree at which you can interject your changes.
+        The different values can be inspected by looking at
+        aqt.browser.SidebarStage.
+        
+        If you want Anki to proceed with the construction of the tree stage
+        in question after your have performed your changes or additions,
+        return the 'handled' boolean unchanged.
+        
+        On the other hand, if you want to prevent Anki from adding its own
+        items at a particular construction stage (e.g. in case your add-on
+        implements its own version of that particular stage), return 'True'.
+        
+        If you return 'True' at SidebarStage.ROOT, the sidebar will not be
+        populated by any of the other construction stages. For any other stage
+        the tree construction will just continue as usual.
+        
+        For example, if your code wishes to replace the tag tree, you could do:
+        
+            def on_browser_will_build_tree(handled, root, stage, browser):
+                if stage != SidebarStage.TAGS:
+                    # not at tag tree building stage, pass on
+                    return handled
+                
+                # your tag tree construction code
+                # root.addChild(...)
+                
+                # your code handled tag tree construction, no need for Anki
+                # or other add-ons to build the tag tree
+                return True
+        """,
     ),
     # States
     ###################
@@ -164,6 +301,40 @@ hooks = [
         """,
     ),
     Hook(
+        name="webview_will_set_content",
+        args=["web_content: aqt.webview.WebContent", "context: Optional[Any]",],
+        doc="""Used to modify web content before it is rendered.
+
+        Web_content contains the HTML, JS, and CSS the web view will be
+        populated with.
+
+        Context is the instance that was passed to stdHtml().
+        It can be inspected to check which screen this hook is firing
+        in, and to get a reference to the screen. For example, if your
+        code wishes to function only in the review screen, you could do:
+
+            def on_webview_will_set_content(web_content: WebContent, context):
+                
+                if not isinstance(context, aqt.reviewer.Reviewer):
+                    # not reviewer, do not modify content
+                    return
+                
+                # reviewer, perform changes to content
+                
+                context: aqt.reviewer.Reviewer
+                
+                addon_package = mw.addonManager.addonFromModule(__name__)
+                
+                web_content.css.append(
+                    f"/_addons/{addon_package}/web/my-addon.css")
+                web_content.js.append(
+                    f"/_addons/{addon_package}/web/my-addon.js")
+
+                web_content.head += "<script>console.log('my-addon')</script>"
+                web_content.body += "<div id='my-addon'></div>"
+        """,
+    ),
+    Hook(
         name="webview_will_show_context_menu",
         args=["webview: aqt.webview.AnkiWebView", "menu: QMenu"],
         legacy_hook="AnkiWebView.contextMenuEvent",
@@ -186,6 +357,48 @@ hooks = [
         args=["style: str"],
         return_type="str",
         legacy_hook="setupStyle",
+    ),
+    Hook(
+        name="top_toolbar_did_init_links",
+        args=["links: List[str]", "top_toolbar: aqt.toolbar.Toolbar"],
+        doc="""Used to modify or add links in the top toolbar of Anki's main window
+        
+        'links' is a list of HTML link elements. Add-ons can generate their own links
+        by using aqt.toolbar.Toolbar.create_link. Links created in that way can then be
+        appended to the link list, e.g.:
+
+            def on_top_toolbar_did_init_links(links, toolbar):
+                my_link = toolbar.create_link(...)
+                links.append(my_link)
+        """,
+    ),
+    Hook(
+        name="media_sync_did_progress", args=["entry: aqt.mediasync.LogEntryWithTime"],
+    ),
+    Hook(name="media_sync_did_start_or_stop", args=["running: bool"]),
+    Hook(
+        name="empty_cards_will_be_deleted",
+        args=["cids: List[int]"],
+        return_type="List[int]",
+        doc="""Allow to change the list of cards to delete.
+
+        For example, an add-on creating a method to delete only empty
+        new cards would be done as follow:
+```
+from anki.consts import CARD_TYPE_NEW
+from anki.utils import ids2str
+from aqt import mw
+from aqt import gui_hooks
+
+def filter(cids, col):
+    return col.db.list(
+            f"select id from cards where (type={CARD_TYPE_NEW} and (id in {ids2str(cids)))")
+
+def emptyNewCard():
+    gui_hooks.append(filter)
+    mw.onEmptyCards()
+    gui_hooks.remove(filter)
+```""",
     ),
     # Adding cards
     ###################
@@ -255,6 +468,37 @@ hooks = [
         args=["player: aqt.sound.Player", "tag: anki.sound.AVTag"],
     ),
     Hook(name="av_player_did_end_playing", args=["player: aqt.sound.Player"]),
+    # Addon
+    ###################
+    Hook(
+        name="addon_config_editor_will_display_json",
+        args=["text: str"],
+        return_type="str",
+        doc="""Allows changing the text of the json configuration before actually
+        displaying it to the user. For example, you can replace "\\\\n" by
+        some actual new line. Then you can replace the new lines by "\\\\n"
+        while reading the file and let the user uses real new line in
+        string instead of its encoding.""",
+    ),
+    Hook(
+        name="addon_config_editor_will_save_json",
+        args=["text: str"],
+        return_type="str",
+        doc="""Allows changing the text of the json configuration that was
+        received from the user before actually reading it. For
+        example, you can replace new line in strings by some "\\\\n".""",
+    ),
+    Hook(
+        name="addons_dialog_will_show",
+        args=["dialog: aqt.addons.AddonsDialog"],
+        doc="""Allows changing the add-on dialog before it is shown. E.g. add
+        buttons.""",
+    ),
+    Hook(
+        name="addons_dialog_did_change_selected_addon",
+        args=["dialog: aqt.addons.AddonsDialog", "add_on: aqt.addons.AddonMeta"],
+        doc="""Allows doing an action when a single add-on is selected.""",
+    ),
     # Other
     ###################
     Hook(

@@ -1,10 +1,11 @@
 # Copyright: Ankitects Pty Ltd and contributors
 # -*- coding: utf-8 -*-
 # License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
+import dataclasses
 import json
 import math
 import sys
-from typing import Any, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 from anki.lang import _
 from anki.utils import isLin, isMac, isWin
@@ -96,14 +97,78 @@ class AnkiWebPage(QWebEnginePage):  # type: ignore
         return self._onBridgeCmd(str)
 
 
+# Add-ons
+##########################################################################
+
+
+@dataclasses.dataclass
+class WebContent:
+    """Stores all dynamically modified content that a particular web view
+    will be populated with.
+
+    Attributes:
+        body {str} -- HTML body
+        head {str} -- HTML head
+        css {List[str]} -- List of media server subpaths,
+                           each pointing to a CSS file
+        js {List[str]} -- List of media server subpaths,
+                          each pointing to a JS file
+
+    Important Notes:
+        - When modifying the attributes specified above, please make sure your
+        changes only perform the minimum requried edits to make your add-on work.
+        You should avoid overwriting or interfering with existing data as much
+        as possible, instead opting to append your own changes, e.g.:
+        
+            def on_webview_will_set_content(web_content: WebContent, context):
+                web_content.body += "<my_html>"
+                web_content.head += "<my_head>"
+
+        - The paths specified in `css` and `js` need to be accessible by Anki's
+          media server. All list members without a specified subpath are assumed
+          to be located under `/_anki`, which is the media server subpath used
+          for all web assets shipped with Anki.
+          
+          Add-ons may expose their own web assets by utilizing
+          aqt.addons.AddonManager.setWebExports(). Web exports registered
+          in this manner may then be accessed under the `/_addons` subpath.
+          
+          E.g., to allow access to a `my-addon.js` and `my-addon.css` residing
+          in a "web" subfolder in your add-on package, first register the
+          corresponding web export:
+          
+          > from aqt import mw
+          > mw.addonManager.setWebExports(__name__, r"web/.*(css|js)")
+          
+          Then append the subpaths to the corresponding web_content fields
+          within a function subscribing to gui_hooks.webview_will_set_content:
+          
+              def on_webview_will_set_content(web_content: WebContent, context):
+                  addon_package = mw.addonManager.addonFromModule(__name__)
+                  web_content.css.append(
+                      f"/_addons/{addon_package}/web/my-addon.css")
+                  web_content.js.append(
+                      f"/_addons/{addon_package}/web/my-addon.js")
+          
+          Note that '/' will also match the os specific path separator.
+    """
+
+    body: str = ""
+    head: str = ""
+    css: List[str] = dataclasses.field(default_factory=lambda: [])
+    js: List[str] = dataclasses.field(default_factory=lambda: [])
+
+
 # Main web view
 ##########################################################################
 
 
 class AnkiWebView(QWebEngineView):  # type: ignore
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self, parent: Optional[QWidget] = None, title: str = "default"
+    ) -> None:
         QWebEngineView.__init__(self, parent=parent)  # type: ignore
-        self.title = "default"
+        self.title = title
         self._page = AnkiWebPage(self._onBridgeCmd)
         self._page.setBackgroundColor(self._getWindowColor())  # reduce flicker
 
@@ -111,7 +176,7 @@ class AnkiWebView(QWebEngineView):  # type: ignore
         self.onBridgeCmd: Callable[[str], Any] = self.defaultOnBridgeCmd
 
         self._domDone = True
-        self._pendingActions: List[Tuple[str, List[Any]]] = []
+        self._pendingActions: List[Tuple[str, Sequence[Any]]] = []
         self.requiresCol = True
         self.setPage(self._page)
 
@@ -193,13 +258,13 @@ class AnkiWebView(QWebEngineView):  # type: ignore
     def dropEvent(self, evt):
         pass
 
-    def setHtml(self, html):
+    def setHtml(self, html: str) -> None:
         # discard any previous pending actions
         self._pendingActions = []
         self._domDone = True
         self._queueAction("setHtml", html)
 
-    def _setHtml(self, html):
+    def _setHtml(self, html: str) -> None:
         app = QApplication.instance()
         oldFocus = app.focusWidget()
         self._domDone = False
@@ -208,7 +273,7 @@ class AnkiWebView(QWebEngineView):  # type: ignore
         if oldFocus:
             oldFocus.setFocus()
 
-    def zoomFactor(self):
+    def zoomFactor(self) -> float:
         # overridden scale factor?
         webscale = os.environ.get("ANKI_WEBSCALE")
         if webscale:
@@ -230,7 +295,7 @@ class AnkiWebView(QWebEngineView):  # type: ignore
         newFactor = desiredScale / qtIntScale
         return max(1, newFactor)
 
-    def _getQtIntScale(self, screen):
+    def _getQtIntScale(self, screen) -> int:
         # try to detect if Qt has scaled the screen
         # - qt will round the scale factor to a whole number, so a dpi of 125% = 1x,
         #   and a dpi of 150% = 2x
@@ -254,11 +319,23 @@ class AnkiWebView(QWebEngineView):  # type: ignore
             return QColor("#ececec")
         return self.style().standardPalette().color(QPalette.Window)
 
-    def stdHtml(self, body, css=None, js=None, head=""):
-        if css is None:
-            css = []
-        if js is None:
-            js = ["jquery.js"]
+    def stdHtml(
+        self,
+        body: str,
+        css: Optional[List[str]] = None,
+        js: Optional[List[str]] = None,
+        head: str = "",
+        context: Optional[Any] = None,
+    ):
+
+        web_content = WebContent(
+            body=body,
+            head=head,
+            js=["webview.js"] + (["jquery.js"] if js is None else js),
+            css=["webview.css"] + ([] if css is None else css),
+        )
+
+        gui_hooks.webview_will_set_content(web_content, context)
 
         palette = self.style().standardPalette()
         color_hl = palette.color(QPalette.Highlight).name()
@@ -299,16 +376,12 @@ div[contenteditable="true"]:focus {
                 "color_hl_txt": color_hl_txt,
             }
 
-        csstxt = "\n".join(
-            [self.bundledCSS("webview.css")] + [self.bundledCSS(fname) for fname in css]
-        )
-        jstxt = "\n".join(
-            [self.bundledScript("webview.js")]
-            + [self.bundledScript(fname) for fname in js]
-        )
+        csstxt = "\n".join(self.bundledCSS(fname) for fname in web_content.css)
+        jstxt = "\n".join(self.bundledScript(fname) for fname in web_content.js)
+
         from aqt import mw
 
-        head = mw.baseHTML() + head + csstxt + jstxt
+        head = mw.baseHTML() + csstxt + jstxt + web_content.head
 
         body_class = theme_manager.body_class()
 
@@ -334,31 +407,36 @@ body {{ zoom: {}; background: {}; {} }}
             widgetspec,
             head,
             body_class,
-            body,
+            web_content.body,
         )
         # print(html)
         self.setHtml(html)
 
-    def webBundlePath(self, path):
+    def webBundlePath(self, path: str) -> str:
         from aqt import mw
 
-        return "http://127.0.0.1:%d/_anki/%s" % (mw.mediaServer.getPort(), path)
+        if path.startswith("/"):
+            subpath = ""
+        else:
+            subpath = "/_anki/"
 
-    def bundledScript(self, fname):
+        return f"http://127.0.0.1:{mw.mediaServer.getPort()}{subpath}{path}"
+
+    def bundledScript(self, fname: str) -> str:
         return '<script src="%s"></script>' % self.webBundlePath(fname)
 
-    def bundledCSS(self, fname):
+    def bundledCSS(self, fname: str) -> str:
         return '<link rel="stylesheet" type="text/css" href="%s">' % self.webBundlePath(
             fname
         )
 
-    def eval(self, js):
+    def eval(self, js: str) -> None:
         self.evalWithCallback(js, None)
 
-    def evalWithCallback(self, js, cb):
+    def evalWithCallback(self, js: str, cb: Callable) -> None:
         self._queueAction("eval", js, cb)
 
-    def _evalWithCallback(self, js, cb):
+    def _evalWithCallback(self, js: str, cb: Callable[[Any], Any]) -> None:
         if cb:
 
             def handler(val):
@@ -371,11 +449,11 @@ body {{ zoom: {}; background: {}; {} }}
         else:
             self.page().runJavaScript(js)
 
-    def _queueAction(self, name, *args):
+    def _queueAction(self, name: str, *args: Any) -> None:
         self._pendingActions.append((name, args))
         self._maybeRunActions()
 
-    def _maybeRunActions(self):
+    def _maybeRunActions(self) -> None:
         while self._pendingActions and self._domDone:
             name, args = self._pendingActions.pop(0)
 
@@ -386,10 +464,10 @@ body {{ zoom: {}; background: {}; {} }}
             else:
                 raise Exception("unknown action: {}".format(name))
 
-    def _openLinksExternally(self, url):
+    def _openLinksExternally(self, url: str) -> None:
         openLink(url)
 
-    def _shouldIgnoreWebEvent(self):
+    def _shouldIgnoreWebEvent(self) -> bool:
         # async web events may be received after the profile has been closed
         # or the underlying webview has been deleted
         from aqt import mw
@@ -421,18 +499,18 @@ body {{ zoom: {}; background: {}; {} }}
             else:
                 return self.onBridgeCmd(cmd)
 
-    def defaultOnBridgeCmd(self, cmd: str) -> Any:
+    def defaultOnBridgeCmd(self, cmd: str) -> None:
         print("unhandled bridge cmd:", cmd)
 
     # legacy
-    def resetHandlers(self):
+    def resetHandlers(self) -> None:
         self.onBridgeCmd = self.defaultOnBridgeCmd
         self._bridge_context = None
 
-    def adjustHeightToFit(self):
+    def adjustHeightToFit(self) -> None:
         self.evalWithCallback("$(document.body).height()", self._onHeight)
 
-    def _onHeight(self, qvar):
+    def _onHeight(self, qvar: Optional[int]) -> None:
         from aqt import mw
 
         if qvar is None:

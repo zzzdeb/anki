@@ -7,13 +7,13 @@ See pylib/anki/hooks.py
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import anki
 import aqt
 from anki.cards import Card
 from anki.hooks import runFilter, runHook
-from aqt.qt import QMenu
+from aqt.qt import QDialog, QMenu
 
 # New hook/filter handling
 ##############################################################################
@@ -73,6 +73,127 @@ class _AddCardsWillShowHistoryMenuHook:
 
 
 add_cards_will_show_history_menu = _AddCardsWillShowHistoryMenuHook()
+
+
+class _AddonConfigEditorWillDisplayJsonFilter:
+    """Allows changing the text of the json configuration before actually
+        displaying it to the user. For example, you can replace "\n" by
+        some actual new line. Then you can replace the new lines by "\n"
+        while reading the file and let the user uses real new line in
+        string instead of its encoding."""
+
+    _hooks: List[Callable[[str], str]] = []
+
+    def append(self, cb: Callable[[str], str]) -> None:
+        """(text: str)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[str], str]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, text: str) -> str:
+        for filter in self._hooks:
+            try:
+                text = filter(text)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(filter)
+                raise
+        return text
+
+
+addon_config_editor_will_display_json = _AddonConfigEditorWillDisplayJsonFilter()
+
+
+class _AddonConfigEditorWillSaveJsonFilter:
+    """Allows changing the text of the json configuration that was
+        received from the user before actually reading it. For
+        example, you can replace new line in strings by some "\n"."""
+
+    _hooks: List[Callable[[str], str]] = []
+
+    def append(self, cb: Callable[[str], str]) -> None:
+        """(text: str)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[str], str]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, text: str) -> str:
+        for filter in self._hooks:
+            try:
+                text = filter(text)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(filter)
+                raise
+        return text
+
+
+addon_config_editor_will_save_json = _AddonConfigEditorWillSaveJsonFilter()
+
+
+class _AddonsDialogDidChangeSelectedAddonHook:
+    """Allows doing an action when a single add-on is selected."""
+
+    _hooks: List[
+        Callable[["aqt.addons.AddonsDialog", "aqt.addons.AddonMeta"], None]
+    ] = []
+
+    def append(
+        self, cb: Callable[["aqt.addons.AddonsDialog", "aqt.addons.AddonMeta"], None]
+    ) -> None:
+        """(dialog: aqt.addons.AddonsDialog, add_on: aqt.addons.AddonMeta)"""
+        self._hooks.append(cb)
+
+    def remove(
+        self, cb: Callable[["aqt.addons.AddonsDialog", "aqt.addons.AddonMeta"], None]
+    ) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self, dialog: aqt.addons.AddonsDialog, add_on: aqt.addons.AddonMeta
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(dialog, add_on)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+addons_dialog_did_change_selected_addon = _AddonsDialogDidChangeSelectedAddonHook()
+
+
+class _AddonsDialogWillShowHook:
+    """Allows changing the add-on dialog before it is shown. E.g. add
+        buttons."""
+
+    _hooks: List[Callable[["aqt.addons.AddonsDialog"], None]] = []
+
+    def append(self, cb: Callable[["aqt.addons.AddonsDialog"], None]) -> None:
+        """(dialog: aqt.addons.AddonsDialog)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.addons.AddonsDialog"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, dialog: aqt.addons.AddonsDialog) -> None:
+        for hook in self._hooks:
+            try:
+                hook(dialog)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+addons_dialog_will_show = _AddonsDialogWillShowHook()
 
 
 class _AvPlayerDidBeginPlayingHook:
@@ -203,6 +324,129 @@ class _BrowserMenusDidInitHook:
 browser_menus_did_init = _BrowserMenusDidInitHook()
 
 
+class _BrowserWillBuildTreeFilter:
+    """Used to add or replace items in the browser sidebar tree
+        
+        'tree' is the root SidebarItem that all other items are added to.
+        
+        'stage' is an enum describing the different construction stages of
+        the sidebar tree at which you can interject your changes.
+        The different values can be inspected by looking at
+        aqt.browser.SidebarStage.
+        
+        If you want Anki to proceed with the construction of the tree stage
+        in question after your have performed your changes or additions,
+        return the 'handled' boolean unchanged.
+        
+        On the other hand, if you want to prevent Anki from adding its own
+        items at a particular construction stage (e.g. in case your add-on
+        implements its own version of that particular stage), return 'True'.
+        
+        If you return 'True' at SidebarStage.ROOT, the sidebar will not be
+        populated by any of the other construction stages. For any other stage
+        the tree construction will just continue as usual.
+        
+        For example, if your code wishes to replace the tag tree, you could do:
+        
+            def on_browser_will_build_tree(handled, root, stage, browser):
+                if stage != SidebarStage.TAGS:
+                    # not at tag tree building stage, pass on
+                    return handled
+                
+                # your tag tree construction code
+                # root.addChild(...)
+                
+                # your code handled tag tree construction, no need for Anki
+                # or other add-ons to build the tag tree
+                return True
+        """
+
+    _hooks: List[
+        Callable[
+            [
+                bool,
+                "aqt.browser.SidebarItem",
+                "aqt.browser.SidebarStage",
+                "aqt.browser.Browser",
+            ],
+            bool,
+        ]
+    ] = []
+
+    def append(
+        self,
+        cb: Callable[
+            [
+                bool,
+                "aqt.browser.SidebarItem",
+                "aqt.browser.SidebarStage",
+                "aqt.browser.Browser",
+            ],
+            bool,
+        ],
+    ) -> None:
+        """(handled: bool, tree: aqt.browser.SidebarItem, stage: aqt.browser.SidebarStage, browser: aqt.browser.Browser)"""
+        self._hooks.append(cb)
+
+    def remove(
+        self,
+        cb: Callable[
+            [
+                bool,
+                "aqt.browser.SidebarItem",
+                "aqt.browser.SidebarStage",
+                "aqt.browser.Browser",
+            ],
+            bool,
+        ],
+    ) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self,
+        handled: bool,
+        tree: aqt.browser.SidebarItem,
+        stage: aqt.browser.SidebarStage,
+        browser: aqt.browser.Browser,
+    ) -> bool:
+        for filter in self._hooks:
+            try:
+                handled = filter(handled, tree, stage, browser)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(filter)
+                raise
+        return handled
+
+
+browser_will_build_tree = _BrowserWillBuildTreeFilter()
+
+
+class _BrowserWillShowHook:
+    _hooks: List[Callable[["aqt.browser.Browser"], None]] = []
+
+    def append(self, cb: Callable[["aqt.browser.Browser"], None]) -> None:
+        """(browser: aqt.browser.Browser)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.browser.Browser"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, browser: aqt.browser.Browser) -> None:
+        for hook in self._hooks:
+            try:
+                hook(browser)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+browser_will_show = _BrowserWillShowHook()
+
+
 class _BrowserWillShowContextMenuHook:
     _hooks: List[Callable[["aqt.browser.Browser", QMenu], None]] = []
 
@@ -227,6 +471,33 @@ class _BrowserWillShowContextMenuHook:
 
 
 browser_will_show_context_menu = _BrowserWillShowContextMenuHook()
+
+
+class _CardLayoutWillShowHook:
+    """Allow to change the display of the card layout. After most values are
+         set and before the window is actually shown."""
+
+    _hooks: List[Callable[["aqt.clayout.CardLayout"], None]] = []
+
+    def append(self, cb: Callable[["aqt.clayout.CardLayout"], None]) -> None:
+        """(clayout: aqt.clayout.CardLayout)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.clayout.CardLayout"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, clayout: aqt.clayout.CardLayout) -> None:
+        for hook in self._hooks:
+            try:
+                hook(clayout)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+card_layout_will_show = _CardLayoutWillShowHook()
 
 
 class _CardWillShowFilter:
@@ -310,6 +581,61 @@ class _CurrentNoteTypeDidChangeHook:
 current_note_type_did_change = _CurrentNoteTypeDidChangeHook()
 
 
+class _DebugConsoleDidEvaluatePythonFilter:
+    """Allows processing the debug result. E.g. logging queries and
+        result, saving last query to display it later..."""
+
+    _hooks: List[Callable[[str, str, QDialog], str]] = []
+
+    def append(self, cb: Callable[[str, str, QDialog], str]) -> None:
+        """(output: str, query: str, debug_window: QDialog)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[str, str, QDialog], str]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, output: str, query: str, debug_window: QDialog) -> str:
+        for filter in self._hooks:
+            try:
+                output = filter(output, query, debug_window)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(filter)
+                raise
+        return output
+
+
+debug_console_did_evaluate_python = _DebugConsoleDidEvaluatePythonFilter()
+
+
+class _DebugConsoleWillShowHook:
+    """Allows editing the debug window. E.g. setting a default code, or
+        previous code."""
+
+    _hooks: List[Callable[[QDialog], None]] = []
+
+    def append(self, cb: Callable[[QDialog], None]) -> None:
+        """(debug_window: QDialog)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[QDialog], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, debug_window: QDialog) -> None:
+        for hook in self._hooks:
+            try:
+                hook(debug_window)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+debug_console_will_show = _DebugConsoleWillShowHook()
+
+
 class _DeckBrowserDidRenderHook:
     """Allow to update the deck browser window. E.g. change its title."""
 
@@ -336,6 +662,63 @@ class _DeckBrowserDidRenderHook:
 deck_browser_did_render = _DeckBrowserDidRenderHook()
 
 
+class _DeckBrowserWillRenderContentHook:
+    """Used to modify HTML content sections in the deck browser body
+        
+        'content' contains the sections of HTML content the deck browser body
+        will be updated with.
+        
+        When modifying the content of a particular section, please make sure your
+        changes only perform the minimum required edits to make your add-on work.
+        You should avoid overwriting or interfering with existing data as much
+        as possible, instead opting to append your own changes, e.g.:
+        
+            def on_deck_browser_will_render_content(deck_browser, content):
+                content.stats += "
+<div>my html</div>"
+        """
+
+    _hooks: List[
+        Callable[
+            ["aqt.deckbrowser.DeckBrowser", "aqt.deckbrowser.DeckBrowserContent"], None
+        ]
+    ] = []
+
+    def append(
+        self,
+        cb: Callable[
+            ["aqt.deckbrowser.DeckBrowser", "aqt.deckbrowser.DeckBrowserContent"], None
+        ],
+    ) -> None:
+        """(deck_browser: aqt.deckbrowser.DeckBrowser, content: aqt.deckbrowser.DeckBrowserContent)"""
+        self._hooks.append(cb)
+
+    def remove(
+        self,
+        cb: Callable[
+            ["aqt.deckbrowser.DeckBrowser", "aqt.deckbrowser.DeckBrowserContent"], None
+        ],
+    ) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self,
+        deck_browser: aqt.deckbrowser.DeckBrowser,
+        content: aqt.deckbrowser.DeckBrowserContent,
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(deck_browser, content)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+deck_browser_will_render_content = _DeckBrowserWillRenderContentHook()
+
+
 class _DeckBrowserWillShowOptionsMenuHook:
     _hooks: List[Callable[[QMenu, int], None]] = []
 
@@ -360,6 +743,114 @@ class _DeckBrowserWillShowOptionsMenuHook:
 
 
 deck_browser_will_show_options_menu = _DeckBrowserWillShowOptionsMenuHook()
+
+
+class _DeckConfDidLoadConfigHook:
+    """Called once widget state has been set from deck config"""
+
+    _hooks: List[Callable[["aqt.deckconf.DeckConf", Any, Any], None]] = []
+
+    def append(self, cb: Callable[["aqt.deckconf.DeckConf", Any, Any], None]) -> None:
+        """(deck_conf: aqt.deckconf.DeckConf, deck: Any, config: Any)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.deckconf.DeckConf", Any, Any], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self, deck_conf: aqt.deckconf.DeckConf, deck: Any, config: Any
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(deck_conf, deck, config)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+deck_conf_did_load_config = _DeckConfDidLoadConfigHook()
+
+
+class _DeckConfDidSetupUiFormHook:
+    """Allows modifying or adding widgets in the deck options UI form"""
+
+    _hooks: List[Callable[["aqt.deckconf.DeckConf"], None]] = []
+
+    def append(self, cb: Callable[["aqt.deckconf.DeckConf"], None]) -> None:
+        """(deck_conf: aqt.deckconf.DeckConf)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.deckconf.DeckConf"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, deck_conf: aqt.deckconf.DeckConf) -> None:
+        for hook in self._hooks:
+            try:
+                hook(deck_conf)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+deck_conf_did_setup_ui_form = _DeckConfDidSetupUiFormHook()
+
+
+class _DeckConfWillSaveConfigHook:
+    """Called before widget state is saved to config"""
+
+    _hooks: List[Callable[["aqt.deckconf.DeckConf", Any, Any], None]] = []
+
+    def append(self, cb: Callable[["aqt.deckconf.DeckConf", Any, Any], None]) -> None:
+        """(deck_conf: aqt.deckconf.DeckConf, deck: Any, config: Any)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.deckconf.DeckConf", Any, Any], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self, deck_conf: aqt.deckconf.DeckConf, deck: Any, config: Any
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(deck_conf, deck, config)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+deck_conf_will_save_config = _DeckConfWillSaveConfigHook()
+
+
+class _DeckConfWillShowHook:
+    """Allows modifying the deck options dialog before it is shown"""
+
+    _hooks: List[Callable[["aqt.deckconf.DeckConf"], None]] = []
+
+    def append(self, cb: Callable[["aqt.deckconf.DeckConf"], None]) -> None:
+        """(deck_conf: aqt.deckconf.DeckConf)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.deckconf.DeckConf"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, deck_conf: aqt.deckconf.DeckConf) -> None:
+        for hook in self._hooks:
+            try:
+                hook(deck_conf)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+deck_conf_will_show = _DeckConfWillShowHook()
 
 
 class _EditorDidFireTypingTimerHook:
@@ -598,6 +1089,99 @@ class _EditorWillUseFontForFieldFilter:
 editor_will_use_font_for_field = _EditorWillUseFontForFieldFilter()
 
 
+class _EmptyCardsWillBeDeletedFilter:
+    """Allow to change the list of cards to delete.
+
+        For example, an add-on creating a method to delete only empty
+        new cards would be done as follow:
+```
+from anki.consts import CARD_TYPE_NEW
+from anki.utils import ids2str
+from aqt import mw
+from aqt import gui_hooks
+
+def filter(cids, col):
+    return col.db.list(
+            f"select id from cards where (type={CARD_TYPE_NEW} and (id in {ids2str(cids)))")
+
+def emptyNewCard():
+    gui_hooks.append(filter)
+    mw.onEmptyCards()
+    gui_hooks.remove(filter)
+```"""
+
+    _hooks: List[Callable[[List[int]], List[int]]] = []
+
+    def append(self, cb: Callable[[List[int]], List[int]]) -> None:
+        """(cids: List[int])"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[List[int]], List[int]]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, cids: List[int]) -> List[int]:
+        for filter in self._hooks:
+            try:
+                cids = filter(cids)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(filter)
+                raise
+        return cids
+
+
+empty_cards_will_be_deleted = _EmptyCardsWillBeDeletedFilter()
+
+
+class _MediaSyncDidProgressHook:
+    _hooks: List[Callable[["aqt.mediasync.LogEntryWithTime"], None]] = []
+
+    def append(self, cb: Callable[["aqt.mediasync.LogEntryWithTime"], None]) -> None:
+        """(entry: aqt.mediasync.LogEntryWithTime)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[["aqt.mediasync.LogEntryWithTime"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, entry: aqt.mediasync.LogEntryWithTime) -> None:
+        for hook in self._hooks:
+            try:
+                hook(entry)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+media_sync_did_progress = _MediaSyncDidProgressHook()
+
+
+class _MediaSyncDidStartOrStopHook:
+    _hooks: List[Callable[[bool], None]] = []
+
+    def append(self, cb: Callable[[bool], None]) -> None:
+        """(running: bool)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[bool], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, running: bool) -> None:
+        for hook in self._hooks:
+            try:
+                hook(running)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+media_sync_did_start_or_stop = _MediaSyncDidStartOrStopHook()
+
+
 class _OverviewDidRefreshHook:
     """Allow to update the overview window. E.g. add the deck name in the
         title."""
@@ -623,6 +1207,55 @@ class _OverviewDidRefreshHook:
 
 
 overview_did_refresh = _OverviewDidRefreshHook()
+
+
+class _OverviewWillRenderContentHook:
+    """Used to modify HTML content sections in the overview body
+
+        'content' contains the sections of HTML content the overview body
+        will be updated with.
+
+        When modifying the content of a particular section, please make sure your
+        changes only perform the minimum required edits to make your add-on work.
+        You should avoid overwriting or interfering with existing data as much
+        as possible, instead opting to append your own changes, e.g.:
+
+            def on_overview_will_render_content(overview, content):
+                content.table += "
+<div>my html</div>"
+        """
+
+    _hooks: List[
+        Callable[["aqt.overview.Overview", "aqt.overview.OverviewContent"], None]
+    ] = []
+
+    def append(
+        self,
+        cb: Callable[["aqt.overview.Overview", "aqt.overview.OverviewContent"], None],
+    ) -> None:
+        """(overview: aqt.overview.Overview, content: aqt.overview.OverviewContent)"""
+        self._hooks.append(cb)
+
+    def remove(
+        self,
+        cb: Callable[["aqt.overview.Overview", "aqt.overview.OverviewContent"], None],
+    ) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self, overview: aqt.overview.Overview, content: aqt.overview.OverviewContent
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(overview, content)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+overview_will_render_content = _OverviewWillRenderContentHook()
 
 
 class _ProfileDidOpenHook:
@@ -1041,6 +1674,41 @@ class _StyleDidInitFilter:
 style_did_init = _StyleDidInitFilter()
 
 
+class _TopToolbarDidInitLinksHook:
+    """Used to modify or add links in the top toolbar of Anki's main window
+        
+        'links' is a list of HTML link elements. Add-ons can generate their own links
+        by using aqt.toolbar.Toolbar.create_link. Links created in that way can then be
+        appended to the link list, e.g.:
+
+            def on_top_toolbar_did_init_links(links, toolbar):
+                my_link = toolbar.create_link(...)
+                links.append(my_link)
+        """
+
+    _hooks: List[Callable[[List[str], "aqt.toolbar.Toolbar"], None]] = []
+
+    def append(self, cb: Callable[[List[str], "aqt.toolbar.Toolbar"], None]) -> None:
+        """(links: List[str], top_toolbar: aqt.toolbar.Toolbar)"""
+        self._hooks.append(cb)
+
+    def remove(self, cb: Callable[[List[str], "aqt.toolbar.Toolbar"], None]) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(self, links: List[str], top_toolbar: aqt.toolbar.Toolbar) -> None:
+        for hook in self._hooks:
+            try:
+                hook(links, top_toolbar)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+top_toolbar_did_init_links = _TopToolbarDidInitLinksHook()
+
+
 class _UndoStateDidChangeHook:
     _hooks: List[Callable[[bool], None]] = []
 
@@ -1127,6 +1795,67 @@ class _WebviewDidReceiveJsMessageFilter:
 
 
 webview_did_receive_js_message = _WebviewDidReceiveJsMessageFilter()
+
+
+class _WebviewWillSetContentHook:
+    """Used to modify web content before it is rendered.
+
+        Web_content contains the HTML, JS, and CSS the web view will be
+        populated with.
+
+        Context is the instance that was passed to stdHtml().
+        It can be inspected to check which screen this hook is firing
+        in, and to get a reference to the screen. For example, if your
+        code wishes to function only in the review screen, you could do:
+
+            def on_webview_will_set_content(web_content: WebContent, context):
+                
+                if not isinstance(context, aqt.reviewer.Reviewer):
+                    # not reviewer, do not modify content
+                    return
+                
+                # reviewer, perform changes to content
+                
+                context: aqt.reviewer.Reviewer
+                
+                addon_package = mw.addonManager.addonFromModule(__name__)
+                
+                web_content.css.append(
+                    f"/_addons/{addon_package}/web/my-addon.css")
+                web_content.js.append(
+                    f"/_addons/{addon_package}/web/my-addon.js")
+
+                web_content.head += "<script>console.log('my-addon')</script>"
+                web_content.body += "<div id='my-addon'></div>"
+        """
+
+    _hooks: List[Callable[["aqt.webview.WebContent", Optional[Any]], None]] = []
+
+    def append(
+        self, cb: Callable[["aqt.webview.WebContent", Optional[Any]], None]
+    ) -> None:
+        """(web_content: aqt.webview.WebContent, context: Optional[Any])"""
+        self._hooks.append(cb)
+
+    def remove(
+        self, cb: Callable[["aqt.webview.WebContent", Optional[Any]], None]
+    ) -> None:
+        if cb in self._hooks:
+            self._hooks.remove(cb)
+
+    def __call__(
+        self, web_content: aqt.webview.WebContent, context: Optional[Any]
+    ) -> None:
+        for hook in self._hooks:
+            try:
+                hook(web_content, context)
+            except:
+                # if the hook fails, remove it
+                self._hooks.remove(hook)
+                raise
+
+
+webview_will_set_content = _WebviewWillSetContentHook()
 
 
 class _WebviewWillShowContextMenuHook:

@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import anki  # pylint: disable=unused-import
+from anki import hooks
 from anki.models import Field, NoteType
 from anki.utils import (
     fieldChecksum,
@@ -39,7 +40,7 @@ class Note:
         id: Optional[int] = None,
     ) -> None:
         assert not (model and id)
-        self.col = col
+        self.col = col.weakref()
         self.newlyAdded = False
         if id:
             self.id = id
@@ -62,7 +63,7 @@ class Note:
             self.mid,
             self.mod,
             self.usn,
-            self.tags,
+            tags,
             fields,
             self.flags,
             self.data,
@@ -73,7 +74,7 @@ from notes where id = ?""",
             self.id,
         )
         self.fields = splitFields(fields)
-        self.tags = self.col.tags.split(self.tags)
+        self.tags = self.col.tags.split(tags)
         self._model = self.col.models.get(self.mid)
         self._fmap = self.col.models.fieldMap(self._model)
         self.scm = self.col.scm
@@ -202,6 +203,7 @@ insert or replace into notes values (?,?,?,?,?,?,?,?,?,?,?)""",
     ##################################################
 
     def _preFlush(self) -> None:
+        hooks.note_will_flush(self)
         # have we been added yet?
         self.newlyAdded = not self.col.db.scalar(
             "select 1 from cards where nid = ?", self.id

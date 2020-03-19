@@ -11,7 +11,7 @@ import locale
 import pickle
 import random
 import shutil
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from send2trash import send2trash
 
@@ -19,11 +19,11 @@ import anki.lang
 import aqt.forms
 import aqt.sound
 from anki.db import DB
-from anki.lang import _
+from anki.lang import _, without_unicode_isolation
 from anki.utils import intTime, isMac, isWin
 from aqt import appHelpSite
 from aqt.qt import *
-from aqt.utils import locale_dir, showWarning
+from aqt.utils import TR, locale_dir, showWarning, tr
 
 metaConf = dict(
     ver=0,
@@ -137,7 +137,7 @@ class ProfileManager:
             def find_class(self, module, name):
                 if module == "PyQt5.sip":
                     try:
-                        import PyQt5.sip  # type: ignore # pylint: disable=unused-import
+                        import PyQt5.sip  # pylint: disable=unused-import
                     except:
                         # use old sip location
                         module = "sip"
@@ -375,16 +375,9 @@ create table if not exists profiles
         self.create(_("User 1"))
         p = os.path.join(self.base, "README.txt")
         open(p, "w", encoding="utf8").write(
-            _(
-                """\
-This folder stores all of your Anki data in a single location,
-to make backups easy. To tell Anki to use a different location,
-please see:
-
-%s
-"""
+            without_unicode_isolation(
+                tr(TR.PROFILES_FOLDER_README, link=appHelpSite + "#startupopts")
             )
-            % (appHelpSite + "#startupopts")
         )
 
     # Default language
@@ -442,7 +435,7 @@ please see:
         sql = "update profiles set data = ? where name = ?"
         self.db.execute(sql, self._pickle(self.meta), "_global")
         self.db.commit()
-        anki.lang.setLang(code, locale_dir(), local=False)
+        anki.lang.set_lang(code, locale_dir())
 
     # OpenGL
     ######################################################################
@@ -503,7 +496,7 @@ please see:
     def set_night_mode(self, on: bool) -> None:
         self.meta["night_mode"] = on
 
-    # Profile-specific options
+    # Profile-specific
     ######################################################################
 
     def interrupt_audio(self) -> bool:
@@ -512,6 +505,18 @@ please see:
     def set_interrupt_audio(self, val: bool) -> None:
         self.profile["interrupt_audio"] = val
         aqt.sound.av_player.interrupt_current_audio = val
+
+    def sync_key(self) -> Optional[str]:
+        return self.profile.get("syncKey")
+
+    def set_sync_key(self, val: Optional[str]) -> None:
+        self.profile["syncKey"] = val
+
+    def media_syncing_enabled(self) -> bool:
+        return self.profile["syncMedia"]
+
+    def sync_shard(self) -> Optional[int]:
+        return self.profile.get("hostNum")
 
     ######################################################################
 

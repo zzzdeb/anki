@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 
 import aqt
 import aqt.sound
+from anki.cards import Card
 from anki.hooks import runFilter
 from anki.httpclient import HttpClient
 from anki.lang import _
@@ -77,7 +78,7 @@ class Editor:
         self.addMode = addMode
         self.currentField: Optional[int] = None
         # current card, for card layout
-        self.card = None
+        self.card: Optional[Card] = None
         self.setupOuter()
         self.setupWeb()
         self.setupShortcuts()
@@ -95,7 +96,6 @@ class Editor:
 
     def setupWeb(self) -> None:
         self.web = EditorWebView(self.widget, self)
-        self.web.title = "editor"
         self.web.allowDrops = True
         self.web.set_bridge_command(self.onBridgeCmd, self)
         self.outerLayout.addWidget(self.web, 1)
@@ -167,6 +167,7 @@ class Editor:
             _html % (bgcol, bgcol, topbuts, _("Show Duplicates")),
             css=["editor.css"],
             js=["jquery.js", "editor.js"],
+            context=self,
         )
 
     # Top buttons
@@ -494,11 +495,13 @@ class Editor:
         form.textEdit.moveCursor(QTextCursor.End)
         d.exec_()
         html = form.textEdit.toPlainText()
-        # filter html through beautifulsoup so we can strip out things like a
-        # leading </div>
-        with warnings.catch_warnings() as w:
-            warnings.simplefilter("ignore", UserWarning)
-            html = str(BeautifulSoup(html, "html.parser"))
+        # https://anki.tenderapp.com/discussions/ankidesktop/39543-anki-is-replacing-the-character-by-when-i-exit-the-html-edit-mode-ctrlshiftx
+        if html.find(">") > -1:
+            # filter html through beautifulsoup so we can strip out things like a
+            # leading </div>
+            with warnings.catch_warnings() as w:
+                warnings.simplefilter("ignore", UserWarning)
+                html = str(BeautifulSoup(html, "html.parser"))
         self.note.fields[field] = html
         self.note.flush()
         self.loadNote(focusTo=field)
@@ -793,8 +796,11 @@ to a cloze type first, via Edit>Change Note Type."""
             self.mw.progress.finish()
         # strip off any query string
         url = re.sub(r"\?.*?$", "", url)
-        path = urllib.parse.unquote(url)
-        return self.mw.col.media.writeData(path, filecontents, typeHint=ct)
+        fname = os.path.basename(urllib.parse.unquote(url))
+        if ct:
+            fname = self.mw.col.media.add_extension_based_on_mime(fname, ct)
+
+        return self.mw.col.media.write_data(fname, filecontents)
 
     # Paste/drag&drop
     ######################################################################
@@ -802,6 +808,10 @@ to a cloze type first, via Edit>Change Note Type."""
     removeTags = ["script", "iframe", "object", "style"]
 
     def _pastePreFilter(self, html, internal):
+        # https://anki.tenderapp.com/discussions/ankidesktop/39543-anki-is-replacing-the-character-by-when-i-exit-the-html-edit-mode-ctrlshiftx
+        if html.find(">") < 0:
+            return html
+
         with warnings.catch_warnings() as w:
             warnings.simplefilter("ignore", UserWarning)
             doc = BeautifulSoup(html, "html.parser")
@@ -937,7 +947,7 @@ to a cloze type first, via Edit>Change Note Type."""
 
 class EditorWebView(AnkiWebView):
     def __init__(self, parent, editor):
-        AnkiWebView.__init__(self)
+        AnkiWebView.__init__(self, title="editor")
         self.editor = editor
         self.strip = self.editor.mw.pm.profile["stripHTML"]
         self.setAcceptDrops(True)

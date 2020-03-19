@@ -1,6 +1,8 @@
 # Copyright: Ankitects Pty Ltd and contributors
 # License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 
+from __future__ import annotations
+
 import copy
 import datetime
 import json
@@ -11,6 +13,8 @@ import re
 import stat
 import time
 import traceback
+import unicodedata
+import weakref
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import anki.find
@@ -26,7 +30,7 @@ from anki.lang import _, ngettext
 from anki.media import MediaManager
 from anki.models import ModelManager, NoteType, Template
 from anki.notes import Note
-from anki.rsbackend import RustBackend
+from anki.rsbackend import TR, RustBackend
 from anki.sched import Scheduler as V1Scheduler
 from anki.schedv2 import Scheduler as V2Scheduler
 from anki.tags import TagManager
@@ -73,7 +77,6 @@ class _Collection:
     ls: int
     conf: Dict[str, Any]
     _undo: List[Any]
-    backend: RustBackend
 
     def __init__(
         self,
@@ -110,6 +113,13 @@ class _Collection:
     def name(self) -> Any:
         n = os.path.splitext(os.path.basename(self.path))[0]
         return n
+
+    def tr(self, key: TR, **kwargs: Union[str, int, float]) -> str:
+        return self.backend.translate(key, **kwargs)
+
+    def weakref(self) -> anki.storage._Collection:
+        "Shortcut to create a weak reference that doesn't break code completion."
+        return weakref.proxy(self)
 
     # Scheduler
     ##########################################################################
@@ -183,7 +193,7 @@ class _Collection:
 select crt, mod, scm, dty, usn, ls,
 conf, models, decks, dconf, tags from col"""
         )
-        self.conf = json.loads(conf)  # type: ignore
+        self.conf = json.loads(conf)
         self.models.load(models)
         self.decks.load(decks, dconf)
         self.tags.load(tags)
@@ -580,9 +590,11 @@ select group_concat(ord+1), count(), flds from cards c, notes n
 where c.nid = n.id and c.id in %s group by nid"""
             % ids2str(cids)
         ):
-            rep += _("Empty card numbers: %(c)s\nFields: %(f)s\n\n") % dict(
-                c=ords, f=flds.replace("\x1f", " / ")
+            rep += self.tr(
+                TR.EMPTY_CARDS_CARD_LINE,
+                **{"card-numbers": ords, "fields": flds.replace("\x1f", " / ")},
             )
+            rep += "\n\n"
         return rep
 
     # Field checksums and sorting fields
@@ -654,6 +666,7 @@ where c.nid = n.id and c.id in %s group by nid"""
         self._startTime = time.time()
         self._startReps = self.sched.reps
 
+    # FIXME: Use Literal[False] when on Python 3.8
     def timeboxReached(self) -> Union[bool, Tuple[Any, int]]:
         "Return (elapsedTime, reps) if timebox reached, or False."
         if not self.conf["timeLim"]:
@@ -778,6 +791,8 @@ select id from notes where mid = ?) limit 1"""
         problems were found.
         """
         problems = []
+        # problems that don't require a full sync
+        syncable_problems = []
         curs = self.db.cursor()
         self.save()
         oldSize = os.stat(self.path)[stat.ST_SIZE]
@@ -914,6 +929,12 @@ select id from cards where odid > 0 and did in %s"""
             self.db.execute(
                 "update cards set odid=0, odue=0 where id in " + ids2str(ids)
             )
+        # notes with non-normalized tags
+        cnt = self._normalize_tags()
+        if cnt > 0:
+            syncable_problems.append(
+                self.tr(TR.DATABASE_CHECK_FIXED_NON_NORMALIZED_TAGS, count=cnt)
+            )
         # tags
         self.tags.registerNotes()
         # field cache
@@ -974,7 +995,20 @@ and type=0""",
         if not ok:
             self.modSchema(check=False)
         self.save()
+        problems.extend(syncable_problems)
         return ("\n".join(problems), ok)
+
+    def _normalize_tags(self) -> int:
+        to_fix = []
+        for id, tags in self.db.execute("select id, tags from notes"):
+            nfc = unicodedata.normalize("NFC", tags)
+            if nfc != tags:
+                to_fix.append((nfc, self.usn(), intTime(), id))
+        if to_fix:
+            self.db.executemany(
+                "update notes set tags=?, usn=?, mod=? where id=?", to_fix
+            )
+        return len(to_fix)
 
     def optimize(self) -> None:
         self.db.setAutocommit(True)

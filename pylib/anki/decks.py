@@ -27,7 +27,7 @@ defaultDeck = {
     "conf": 1,
     "usn": 0,
     "desc": "",
-    "dyn": 0,  # anki uses int/bool interchangably here
+    "dyn": DECK_STD,  # anki uses int/bool interchangably here
     "collapsed": False,
     # added in beta11
     "extendNew": 10,
@@ -40,7 +40,7 @@ defaultDynamicDeck = {
     "lrnToday": [0, 0],
     "timeToday": [0, 0],
     "collapsed": False,
-    "dyn": 1,
+    "dyn": DECK_DYN,
     "desc": "",
     "usn": 0,
     "delays": None,
@@ -71,7 +71,7 @@ defaultConf = {
         "minInt": 1,
         "leechFails": 8,
         # type 0=suspend, 1=tagonly
-        "leechAction": 0,
+        "leechAction": LEECH_SUSPEND,
     },
     "rev": {
         "perDay": 200,
@@ -101,7 +101,7 @@ class DeckManager:
     #############################################################
 
     def __init__(self, col: anki.storage._Collection) -> None:
-        self.col = col
+        self.col = col.weakref()
         self.decks = {}
         self.dconf = {}
 
@@ -219,23 +219,26 @@ class DeckManager:
             self.select(int(list(self.decks.keys())[0]))
         self.save()
 
-    def allNames(self, dyn: bool = True, forceDefault: bool = True) -> List:
+    def allNames(self, dyn: bool = True, force_default: bool = True) -> List:
         "An unsorted list of all deck names."
         if dyn:
-            return [x["name"] for x in self.all(forceDefault=forceDefault)]
+            return [x["name"] for x in self.all(force_default=force_default)]
         else:
             return [
-                x["name"] for x in self.all(forceDefault=forceDefault) if not x["dyn"]
+                x["name"] for x in self.all(force_default=force_default) if not x["dyn"]
             ]
 
-    def all(self, forceDefault: bool = True) -> List:
-        "A list of all decks."
+    def all(self, force_default: bool = True) -> List:
+        """A list of all decks.
+
+        list contains default deck if either:
+        * force_default is True
+        * there are no other deck
+        * default deck contains a card
+        * default deck has a child (assumed not to be the case if assume_no_child)
+        """
         decks = list(self.decks.values())
-        if (
-            not forceDefault
-            and not self.col.db.scalar("select 1 from cards where did = 1 limit 1")
-            and len(decks) > 1
-        ):
+        if not force_default and not self.should_default_be_displayed(force_default):
             decks = [deck for deck in decks if deck["id"] != 1]
         return decks
 
@@ -443,7 +446,7 @@ class DeckManager:
             return deck["name"]
         return _("[no deck]")
 
-    def nameOrNone(self, did) -> Any:
+    def nameOrNone(self, did: int) -> Any:
         deck = self.get(did, default=False)
         if deck:
             return deck["name"]
@@ -512,6 +515,42 @@ class DeckManager:
     def checkIntegrity(self) -> None:
         self._recoverOrphans()
         self._checkDeckTree()
+
+    def should_deck_be_displayed(
+        self, deck, force_default: bool = True, assume_no_child: bool = False
+    ) -> bool:
+        """Whether the deck should appear in main window, browser side list, filter, deck selection...
+
+        True, except for empty default deck without children"""
+        if deck["id"] != "1":
+            return True
+        return self.should_default_be_displayed(force_default, assume_no_child)
+
+    def should_default_be_displayed(
+        self,
+        force_default: bool = True,
+        assume_no_child: bool = False,
+        default_deck: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Whether the default deck should appear in main window, browser side list, filter, deck selection...
+
+        True, except for empty default deck (without children)"""
+        if force_default:
+            return True
+        if self.col.db.scalar("select 1 from cards where did = 1 limit 1"):
+            return True
+        if len(self.decks) == 1:
+            return True
+        # looking for children
+        if assume_no_child:
+            return False
+        if default_deck is None:
+            default_deck = self.get(1)
+        defaultName = default_deck["name"]
+        for name in self.allNames():
+            if name.startswith(f"{defaultName}::"):
+                return True
+        return False
 
     # Deck selection
     #############################################################

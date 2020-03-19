@@ -197,6 +197,7 @@ system. It's free and open source."
             "Rai (Michael Pokorny)",
             "AMBOSS MD Inc.",
             "Erez Volk",
+            "Tobias Predel",
         )
     )
 
@@ -219,5 +220,5 @@ suggestions, bug reports and donations."
     abt.label.setMinimumWidth(800)
     abt.label.setMinimumHeight(600)
     dialog.show()
-    abt.label.stdHtml(abouttext, js=" ")
+    abt.label.stdHtml(abouttext, js=[])
     return dialog

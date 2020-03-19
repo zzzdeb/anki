@@ -11,6 +11,7 @@ import sre_constants
 import time
 import unicodedata
 from dataclasses import dataclass
+from enum import Enum
 from operator import itemgetter
 from typing import Callable, List, Optional, Union
 
@@ -23,7 +24,8 @@ from anki.consts import *
 from anki.lang import _, ngettext
 from anki.models import NoteType
 from anki.notes import Note
-from anki.utils import fmtTimeSpan, htmlToTextLine, ids2str, intTime, isMac, isWin
+from anki.rsbackend import TR
+from anki.utils import htmlToTextLine, ids2str, intTime, isMac, isWin
 from aqt import AnkiQt, gui_hooks
 from aqt.editor import Editor
 from aqt.exporting import ExportDialog
@@ -50,6 +52,7 @@ from aqt.utils import (
     showInfo,
     showWarning,
     tooltip,
+    tr,
 )
 from aqt.webview import AnkiWebView
 
@@ -71,7 +74,7 @@ class FindDupesDialog:
 
 
 class DataModel(QAbstractTableModel):
-    def __init__(self, browser):
+    def __init__(self, browser: Browser):
         QAbstractTableModel.__init__(self)
         self.browser = browser
         self.col = browser.col
@@ -79,8 +82,8 @@ class DataModel(QAbstractTableModel):
         self.activeCols = self.col.conf.get(
             "activeCols", ["noteFld", "template", "cardDue", "deck"]
         )
-        self.cards = []
-        self.cardObjs = {}
+        self.cards: List[int] = []
+        self.cardObjs: Dict[int, Card] = {}
 
     def getCard(self, index):
         id = self.cards[index.row()]
@@ -317,7 +320,7 @@ class DataModel(QAbstractTableModel):
                 return _("(new)")
             elif c.type == 1:
                 return _("(learning)")
-            return fmtTimeSpan(c.ivl * 86400)
+            return self.col.backend.format_time_span(c.ivl * 86400)
         elif type == "cardEase":
             if c.type == 0:
                 return _("(new)")
@@ -350,11 +353,13 @@ class DataModel(QAbstractTableModel):
     def nextDue(self, c, index):
         if c.odid:
             return _("(filtered)")
-        elif c.queue == 1:
+        elif c.queue == QUEUE_TYPE_LRN:
             date = c.due
-        elif c.queue == 0 or c.type == 0:
-            return str(c.due)
-        elif c.queue in (2, 3) or (c.type == 2 and c.queue < 0):
+        elif c.queue == QUEUE_TYPE_NEW or c.type == CARD_TYPE_NEW:
+            return tr(TR.STATISTICS_DUE_FOR_NEW_CARD, number=c.due)
+        elif c.queue in (QUEUE_TYPE_REV, QUEUE_TYPE_DAY_LEARN_RELEARN) or (
+            c.type == CARD_TYPE_REV and c.queue < 0
+        ):
             date = time.time() + ((c.due - self.col.sched.today) * 86400)
         else:
             return ""
@@ -414,6 +419,15 @@ class StatusDelegate(QItemDelegate):
 
 # Sidebar
 ######################################################################
+
+
+class SidebarStage(Enum):
+    ROOT = 0
+    STANDARD = 1
+    FAVORITES = 2
+    DECKS = 3
+    MODELS = 4
+    TAGS = 5
 
 
 class SidebarItem:
@@ -582,6 +596,7 @@ class Browser(QMainWindow):
         self.updateFont()
         self.onUndoState(self.mw.form.actionUndo.isEnabled())
         self.setupSearch()
+        gui_hooks.browser_will_show(self)
         self.show()
 
     def setupMenus(self) -> None:
@@ -716,7 +731,7 @@ class Browser(QMainWindow):
             ("noteCrt", _("Created")),
             ("noteMod", _("Edited")),
             ("cardMod", _("Changed")),
-            ("cardDue", _("Due")),
+            ("cardDue", tr(TR.STATISTICS_DUE_DATE)),
             ("cardIvl", _("Interval")),
             ("cardEase", _("Ease")),
             ("cardReps", _("Reviews")),
@@ -776,10 +791,11 @@ class Browser(QMainWindow):
     def search(self) -> None:
         if "is:current" in self._lastSearchTxt:
             # show current card if there is one
-            c = self.mw.reviewer.card
-            self.card = self.mw.reviewer.card
+            c = self.card = self.mw.reviewer.card
             nid = c and c.nid or 0
-            self.model.search("nid:%d" % nid)
+            if nid:
+                self.model.search("nid:%d" % nid)
+                self.focusCid(c.id)
         else:
             self.model.search(self._lastSearchTxt)
 
@@ -852,7 +868,7 @@ QTableView {{ gridline-color: {grid} }}
         else:
             self.editor.setNote(self.card.note(reload=True), focusTo=self.focusTo)
             self.focusTo = None
-            self.editor.card = self.card  # type: ignore
+            self.editor.card = self.card
             self.singleCard = True
         self._updateFlagsMenu()
         gui_hooks.browser_did_change_row(self)
@@ -1083,11 +1099,27 @@ by clicking on one on the left."""
 
     def buildTree(self) -> SidebarItem:
         root = SidebarItem("", "")
-        self._stdTree(root)
-        self._favTree(root)
-        self._decksTree(root)
-        self._modelTree(root)
-        self._userTagTree(root)
+
+        handled = gui_hooks.browser_will_build_tree(
+            False, root, SidebarStage.ROOT, self
+        )
+        if handled:
+            return root
+
+        for stage, builder in zip(
+            list(SidebarStage)[1:],
+            (
+                self._stdTree,
+                self._favTree,
+                self._decksTree,
+                self._modelTree,
+                self._userTagTree,
+            ),
+        ):
+            handled = gui_hooks.browser_will_build_tree(False, root, stage, self)
+            if not handled and builder:
+                builder(root)
+
         return root
 
     def _stdTree(self, root) -> None:
@@ -1125,6 +1157,15 @@ by clicking on one on the left."""
 
         def fillGroups(root, grps, head=""):
             for g in grps:
+                baseName = g[0]
+                did = g[1]
+                children = g[5]
+                if str(did) == "1" and not children:
+                    if not self.mw.col.decks.should_default_be_displayed(
+                        force_default=False, assume_no_child=True
+                    ):
+
+                        continue
                 item = SidebarItem(
                     g[0],
                     ":/icons/deck.svg",
@@ -1241,7 +1282,7 @@ by clicking on one on the left."""
                     (_("New"), "is:new"),
                     (_("Learning"), "is:learn"),
                     (_("Review"), "is:review"),
-                    (_("Due"), "is:due"),
+                    (tr(TR.FILTERING_IS_DUE), "is:due"),
                     None,
                     (_("Suspended"), "is:suspended"),
                     (_("Buried"), "is:buried"),
@@ -1281,7 +1322,10 @@ by clicking on one on the left."""
                     subm.addSeparator()
                     addDecks(subm, children)
                 else:
-                    parent.addItem(shortname, self._filterFunc("deck", name))
+                    if did != 1 or self.col.decks.should_default_be_displayed(
+                        force_default=False, assume_no_child=True
+                    ):
+                        parent.addItem(shortname, self._filterFunc("deck", name))
 
         # fixme: could rewrite to avoid calculating due # in the future
         alldecks = self.col.sched.deckDueTree()
@@ -1382,27 +1426,20 @@ by clicking on one on the left."""
         info, cs = self._cardInfoData()
         reps = self._revlogData(cs)
 
-        class CardInfoDialog(QDialog):
-            silentlyClose = True
-
-            def reject(self):
-                saveGeom(self, "revlog")
-                return QDialog.reject(self)
-
-        d = CardInfoDialog(self)
+        card_info_dialog = CardInfoDialog(self)
         l = QVBoxLayout()
         l.setContentsMargins(0, 0, 0, 0)
-        w = AnkiWebView()
+        w = AnkiWebView(title="browser card info")
         l.addWidget(w)
-        w.stdHtml(info + "<p>" + reps)
+        w.stdHtml(info + "<p>" + reps, context=card_info_dialog)
         bb = QDialogButtonBox(QDialogButtonBox.Close)
         l.addWidget(bb)
-        bb.rejected.connect(d.reject)
-        d.setLayout(l)
-        d.setWindowModality(Qt.WindowModal)
-        d.resize(500, 400)
-        restoreGeom(d, "revlog")
-        d.show()
+        bb.rejected.connect(card_info_dialog.reject)
+        card_info_dialog.setLayout(l)
+        card_info_dialog.setWindowModality(Qt.WindowModal)
+        card_info_dialog.resize(500, 400)
+        restoreGeom(card_info_dialog, "revlog")
+        card_info_dialog.show()
 
     def _cardInfoData(self):
         from anki.stats import CardStats
@@ -1427,13 +1464,10 @@ border: 1px solid #000; padding: 3px; '>%s</div>"""
         if not entries:
             return ""
         s = "<table width=100%%><tr><th align=left>%s</th>" % _("Date")
-        s += ("<th align=right>%s</th>" * 5) % (
-            _("Type"),
-            _("Rating"),
-            _("Interval"),
-            _("Ease"),
-            _("Time"),
-        )
+        s += "<th align=right>%s</th>" % _("Type")
+        s += "<th align=center>%s</th>" % _("Rating")
+        s += "<th align=left>%s</th>" % _("Interval")
+        s += ("<th align=right>%s</th>" * 2) % (_("Ease"), _("Time"),)
         cnt = 0
         for (date, ease, ivl, factor, taken, type) in reversed(entries):
             cnt += 1
@@ -1446,9 +1480,9 @@ border: 1px solid #000; padding: 3px; '>%s</div>"""
             import anki.stats as st
 
             fmt = "<span style='color:%s'>%s</span>"
-            if type == 0:
+            if type == CARD_TYPE_NEW:
                 tstr = fmt % (st.colLearn, tstr)
-            elif type == 1:
+            elif type == CARD_TYPE_LRN:
                 tstr = fmt % (st.colMature, tstr)
             elif type == 2:
                 tstr = fmt % (st.colRelearn, tstr)
@@ -1459,17 +1493,18 @@ border: 1px solid #000; padding: 3px; '>%s</div>"""
             if ease == 1:
                 ease = fmt % (st.colRelearn, ease)
             if ivl == 0:
-                ivl = _("0d")
-            elif ivl > 0:
-                ivl = fmtTimeSpan(ivl * 86400, short=True)
+                ivl = ""
             else:
-                ivl = cs.time(-ivl)
-            s += ("<td align=right>%s</td>" * 5) % (
-                tstr,
-                ease,
-                ivl,
+                if ivl > 0:
+                    ivl *= 86_400
+                ivl = cs.time(abs(ivl))
+            s += "<td align=right>%s</td>" % tstr
+            s += "<td align=center>%s</td>" % ease
+            s += "<td align=left>%s</td>" % ivl
+
+            s += ("<td align=right>%s</td>" * 2) % (
                 "%d%%" % (factor / 10) if factor else "",
-                cs.time(taken),
+                self.col.backend.format_time_span(taken),
             ) + "</tr>"
         s += "</table>"
         if cnt < self.card.reps:
@@ -1561,7 +1596,7 @@ where id in %s"""
         self._previewWindow.silentlyClose = True
         vbox = QVBoxLayout()
         vbox.setContentsMargins(0, 0, 0, 0)
-        self._previewWeb = AnkiWebView()
+        self._previewWeb = AnkiWebView(title="previewer")
         vbox.addWidget(self._previewWeb)
         bbox = QDialogButtonBox()
 
@@ -1656,12 +1691,15 @@ where id in %s"""
             "mathjax/MathJax.js",
             "reviewer.js",
         ]
+        web_context = PreviewDialog(dialog=self._previewWindow, browser=self)
         self._previewWeb.stdHtml(
-            self.mw.reviewer.revHtml(), css=["reviewer.css"], js=jsinc
+            self.mw.reviewer.revHtml(),
+            css=["reviewer.css"],
+            js=jsinc,
+            context=web_context,
         )
         self._previewWeb.set_bridge_command(
-            self._on_preview_bridge_cmd,
-            PreviewDialog(dialog=self._previewWindow, browser=self),
+            self._on_preview_bridge_cmd, web_context,
         )
 
     def _on_preview_bridge_cmd(self, cmd: str) -> Any:
@@ -1736,7 +1774,7 @@ where id in %s"""
                     audio = c.answer_av_tags()
                 av_player.play_tags(audio)
             else:
-                av_player.maybe_interrupt()
+                av_player.clear_queue_and_maybe_interrupt()
 
                 txt = self.mw.prepare_card_text_for_display(txt)
             txt = gui_hooks.card_will_show(
@@ -1967,7 +2005,8 @@ update cards set usn=?, mod=?, did=? where id in """
     def _reposition(self):
         cids = self.selectedCards()
         cids2 = self.col.db.list(
-            "select id from cards where type = 0 and id in " + ids2str(cids)
+            f"select id from cards where type = {CARD_TYPE_NEW} and id in "
+            + ids2str(cids)
         )
         if not cids2:
             return showInfo(_("Only new cards can be repositioned."))
@@ -1976,7 +2015,7 @@ update cards set usn=?, mod=?, did=? where id in """
         frm = aqt.forms.reposition.Ui_Dialog()
         frm.setupUi(d)
         (pmin, pmax) = self.col.db.first(
-            "select min(due), max(due) from cards where type=0 and odid=0"
+            f"select min(due), max(due) from cards where type={CARD_TYPE_NEW} and odid=0"
         )
         pmin = pmin or 0
         pmax = pmax or 0
@@ -2160,10 +2199,10 @@ update cards set usn=?, mod=?, did=? where id in """
         frm.fields.addItems(fields)
         self._dupesButton = None
         # links
-        frm.webView.set_bridge_command(
-            self.dupeLinkClicked, FindDupesDialog(dialog=d, browser=self)
-        )
-        frm.webView.stdHtml("")
+        frm.webView.title = "find duplicates"
+        web_context = FindDupesDialog(dialog=d, browser=self)
+        frm.webView.set_bridge_command(self.dupeLinkClicked, web_context)
+        frm.webView.stdHtml("", context=web_context)
 
         def onFin(code):
             saveGeom(d, "findDupes")
@@ -2172,13 +2211,15 @@ update cards set usn=?, mod=?, did=? where id in """
 
         def onClick():
             field = fields[frm.fields.currentIndex()]
-            self.duplicatesReport(frm.webView, field, frm.search.text(), frm)
+            self.duplicatesReport(
+                frm.webView, field, frm.search.text(), frm, web_context
+            )
 
         search = frm.buttonBox.addButton(_("Search"), QDialogButtonBox.ActionRole)
         search.clicked.connect(onClick)
         d.show()
 
-    def duplicatesReport(self, web, fname, search, frm):
+    def duplicatesReport(self, web, fname, search, frm, web_context):
         self.mw.progress.start()
         res = self.mw.col.findDupes(fname, search)
         if not self._dupesButton:
@@ -2203,7 +2244,7 @@ update cards set usn=?, mod=?, did=? where id in """
                 )
             )
         t += "</ol>"
-        web.stdHtml(t)
+        web.stdHtml(t, context=web_context)
         self.mw.progress.finish()
 
     def _onTagDupes(self, res):
@@ -2477,3 +2518,19 @@ Are you sure you want to continue?"""
 
     def onHelp(self):
         openHelp("browsermisc")
+
+
+# Card Info Dialog
+######################################################################
+
+
+class CardInfoDialog(QDialog):
+    silentlyClose = True
+
+    def __init__(self, browser: Browser, *args, **kwargs):
+        super().__init__(browser, *args, **kwargs)
+        self.browser = browser
+
+    def reject(self):
+        saveGeom(self, "revlog")
+        return QDialog.reject(self)

@@ -4,6 +4,8 @@ import os
 import tempfile
 
 from anki import Collection as aopen
+from anki.lang import without_unicode_isolation
+from anki.rsbackend import TR
 from anki.stdmodels import addBasicModel, models
 from anki.utils import isWin
 from tests.shared import assertException, getEmptyCol
@@ -147,3 +149,15 @@ def test_furigana():
     m["tmpls"][0]["qfmt"] = "{{kana:}}"
     mm.save(m)
     c.q(reload=True)
+
+
+def test_translate():
+    d = getEmptyCol()
+    no_uni = without_unicode_isolation
+
+    assert (
+        d.tr(TR.CARD_TEMPLATE_RENDERING_FRONT_SIDE_PROBLEM)
+        == "Front template has a problem:"
+    )
+    assert no_uni(d.tr(TR.STATISTICS_REVIEWS, reviews=1)) == "1 review"
+    assert no_uni(d.tr(TR.STATISTICS_REVIEWS, reviews=2)) == "2 reviews"

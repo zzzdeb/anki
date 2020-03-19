@@ -3,10 +3,14 @@
 # License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 # Please leave the coding line in this file to prevent xgettext complaining.
 
+from __future__ import annotations
+
 import gettext
+import os
 import re
-import threading
-from typing import Any
+from typing import Optional, Union
+
+import anki
 
 langs = sorted(
     [
@@ -25,7 +29,7 @@ langs = sorted(
         ("Galego", "gl_ES"),
         ("Hrvatski", "hr_HR"),
         ("Italiano", "it_IT"),
-        ("lo jbobau", "jbo"),
+        ("lo jbobau", "jbo_EN"),
         ("Lenga d'òc", "oc_FR"),
         ("Magyar", "hu_HU"),
         ("Nederlands", "nl_NL"),
@@ -106,61 +110,78 @@ compatMap = {
     "vi": "vi_VN",
 }
 
-threadLocal = threading.local()
 
-# global defaults
-currentLang: Any = None
-currentTranslation: Any = None
+def lang_to_disk_lang(lang: str) -> str:
+    """Normalize lang, then convert it to name used on disk."""
+    # convert it into our canonical representation first
+    lang = lang.replace("-", "_")
+    if lang in compatMap:
+        lang = compatMap[lang]
+
+    # these language/region combinations are fully qualified, but with a hyphen
+    if lang in (
+        "en_GB",
+        "ga_IE",
+        "hy_AM",
+        "nb_NO",
+        "nn_NO",
+        "pt_BR",
+        "pt_PT",
+        "sv_SE",
+        "zh_CN",
+        "zh_TW",
+    ):
+        return lang.replace("_", "-")
+    # other languages have the region portion stripped
+    return re.match("(.*)_", lang).group(1)
 
 
-def localTranslation() -> Any:
-    "Return the translation local to this thread, or the default."
-    if getattr(threadLocal, "currentTranslation", None):
-        return threadLocal.currentTranslation
-    else:
-        return currentTranslation
+# the currently set interface language
+currentLang = "en"
+
+# the current gettext translation catalog
+current_catalog: Optional[
+    Union[gettext.NullTranslations, gettext.GNUTranslations]
+] = None
+
+# the current Fluent translation instance
+current_i18n: Optional[anki.rsbackend.I18nBackend]
+
+# path to locale folder
+locale_folder = ""
 
 
 def _(str: str) -> str:
-    return localTranslation().gettext(str)
+    if current_catalog:
+        return current_catalog.gettext(str)
+    else:
+        return str
 
 
 def ngettext(single: str, plural: str, n: int) -> str:
-    return localTranslation().ngettext(single, plural, n)
+    if current_catalog:
+        return current_catalog.ngettext(single, plural, n)
+    elif n == 1:
+        return single
+    return plural
 
 
-def setLang(lang: str, locale_dir: str, local: bool = True) -> None:
-    lang = mungeCode(lang)
-    trans = gettext.translation("anki", locale_dir, languages=[lang], fallback=True)
-    if local:
-        threadLocal.currentLang = lang
-        threadLocal.currentTranslation = trans
-    else:
-        global currentLang, currentTranslation
-        currentLang = lang
-        currentTranslation = trans
+def set_lang(lang: str, locale_dir: str) -> None:
+    global currentLang, current_catalog, current_i18n, locale_folder
+    gettext_dir = os.path.join(locale_dir, "gettext")
+    ftl_dir = os.path.join(locale_dir, "fluent")
+
+    currentLang = lang
+    current_catalog = gettext.translation(
+        "anki", gettext_dir, languages=[lang], fallback=True
+    )
+    current_i18n = anki.rsbackend.I18nBackend(
+        preferred_langs=[lang], ftl_folder=ftl_dir
+    )
+    locale_folder = locale_dir
 
 
-def getLang() -> str:
-    "Return the language local to this thread, or the default."
-    if getattr(threadLocal, "currentLang", None):
-        return threadLocal.currentLang
-    else:
-        return currentLang
-
-
-def noHint(str) -> str:
-    "Remove translation hint from end of string."
-    return re.sub(r"(^.*?)( ?\(.+?\))?$", "\\1", str)
-
-
-def mungeCode(code: str) -> Any:
-    code = code.replace("-", "_")
-    if code in compatMap:
-        code = compatMap[code]
-
-    return code
-
-
-if not currentTranslation:
-    setLang("en_US", locale_dir="", local=False)
+# strip off unicode isolation markers from a translated string
+# for testing purposes
+def without_unicode_isolation(s: str) -> str:
+    return s.replace("\u2068", "").replace("\u2069", "")
